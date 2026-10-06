@@ -1,9 +1,9 @@
 import sys
 from types import SimpleNamespace
-
+import pytest
 from PIL import Image
 
-from backend.app.recognition import Recognizer
+from backend.app.recognition import Recognizer, ModelUnavailable
 
 def test_adapter_uses_bioclip2_species_rank_and_pil_image_list(monkeypatch):
     observed = {}
@@ -29,3 +29,33 @@ def test_adapter_uses_bioclip2_species_rank_and_pil_image_list(monkeypatch):
     assert observed["eval"] is True
     assert result["uncertain"] is True
     assert result["candidates"][0]["species"]["id"] == "neem"
+
+def test_recognizer_clears_sticky_error_on_success(monkeypatch):
+    should_fail = True
+    class FlakyClassifier:
+        def __init__(self, **kwargs):
+            self.model = SimpleNamespace(_orig_mod="eager model")
+        def eval(self):
+            pass
+        def predict(self, images, rank, k):
+            if should_fail:
+                raise RuntimeError("Temporary CUDA out of memory")
+            return [{"species": "Azadirachta indica", "score": .92}]
+
+    module = SimpleNamespace(TreeOfLifeClassifier=FlakyClassifier, Rank=SimpleNamespace(SPECIES="species"), __spec__=SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "bioclip", module)
+    monkeypatch.setenv("NATUREDEX_MODEL_ENABLED", "1")
+    recognizer = Recognizer()
+
+    # Initial failed prediction sets self.error
+    with pytest.raises(ModelUnavailable):
+        recognizer.predict(Image.new("RGB", (32, 32)))
+    assert recognizer.error == "Temporary CUDA out of memory"
+    assert recognizer.status()["error"] == "Temporary CUDA out of memory"
+
+    # Subsequent successful prediction must clear sticky error
+    should_fail = False
+    result = recognizer.predict(Image.new("RGB", (32, 32)))
+    assert result["candidates"][0]["species"]["id"] == "neem"
+    assert recognizer.error is None
+    assert recognizer.status()["error"] is None

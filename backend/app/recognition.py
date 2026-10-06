@@ -36,6 +36,7 @@ class Recognizer:
                     self.classifier.model = getattr(self.classifier.model, "_orig_mod", self.classifier.model)
                     self.classifier.eval()
                 rows = self.classifier.predict([image], rank=Rank.SPECIES, k=5)
+                self.error = None
             except Exception as exc:
                 self.error = str(exc)
                 raise ModelUnavailable("BioCLIP could not load or run locally. Check installed AI dependencies, cached weights, and available memory. See the backend console for details.") from exc

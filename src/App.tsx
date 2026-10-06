@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api, PairingRequired, post } from './api';
 import { useInstall } from './install';
-import { loadFieldGuide } from './snapshot';
+import { loadFieldGuide, queueOfflineObservation, syncOfflineQueue } from './snapshot';
 import { pairPhone, takePairingCode } from './pairing';
 import type { Achievement, Dashboard, Expedition, Health, Mode, Page, Scan, Species } from './types';
 
@@ -173,11 +173,25 @@ export default function App() {
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, [mode, connectionVersion]);
+
   useEffect(() => {
-    const reconnect = () => { if (offline) setConnectionVersion(value => value + 1); };
+    const triggerSync = () => {
+      syncOfflineQueue().then(({ synced }) => {
+        if (synced > 0) {
+          notify(`Synced ${synced} offline discovery${synced > 1 ? 's' : ''}!`);
+          refresh();
+        }
+      }).catch(() => {});
+    };
+    const reconnect = () => {
+      if (offline) setConnectionVersion(value => value + 1);
+      triggerSync();
+    };
     window.addEventListener('online', reconnect);
+    if (!offline) triggerSync();
     return () => window.removeEventListener('online', reconnect);
-  }, [offline]);
+  }, [offline, refresh, notify]);
+
   useEffect(() => { localStorage.setItem('naturedex-name', name); }, [name]);
   useEffect(() => { localStorage.setItem('naturedex-save-area', String(saveArea)); }, [saveArea]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [page]);
@@ -188,7 +202,6 @@ export default function App() {
     controller.current?.abort(); setDialog(null); setBusy(false); setActionError('');
   }
   function startScan() {
-    if (offline) { notify('Reconnect to your NatureDex computer to scan and save discoveries.'); return; }
     setScan(null); setPreview(null); setConfirmed(false); setCandidateIndex(0); setNote(''); setArea(''); setActionError(''); setDialog('scan');
   }
   async function sample(species: Species) {
@@ -203,6 +216,21 @@ export default function App() {
     if (!file.type.startsWith('image/')) { setActionError('Choose an image file.'); return; }
     controller.current?.abort(); controller.current = new AbortController();
     setPreview(URL.createObjectURL(file)); setScan(null); setBusy(true); setActionError('');
+    if (offline) {
+      setScan({
+        scan_id: 'offline-' + Date.now(),
+        mode,
+        photo: null,
+        candidates: [],
+        uncertain: false,
+        message: 'Saved for offline sync. This observation will be identified when you reconnect.',
+        score_note: 'Stored locally in IndexedDB.',
+      });
+      setCandidateIndex(0);
+      setConfirmed(true);
+      setBusy(false);
+      return;
+    }
     const form = new FormData(); form.append('file', file);
     try {
       const result = await api<Scan>('/scans', { method: 'POST', body: form, signal: controller.current.signal });
@@ -214,6 +242,24 @@ export default function App() {
   async function saveDiscovery() {
     if (!scan) return;
     setBusy(true); setActionError('');
+    if (offline && preview) {
+      try {
+        const res = await fetch(preview);
+        const blob = await res.blob();
+        await queueOfflineObservation({
+          id: 'offline-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+          blob,
+          mode,
+          note,
+          area: saveArea ? area || null : null,
+          createdAt: new Date().toISOString(),
+        });
+        closeDialog();
+        notify('Observation queued offline! Will automatically sync and identify when reconnected.');
+      } catch (error) { setActionError(errorMessage(error)); }
+      finally { setBusy(false); }
+      return;
+    }
     try {
       const result = await post<{ xp: number; new_species: boolean; species: Species }>('/observations', { scan_id: scan.scan_id, candidate: candidateIndex, confirm_uncertain: confirmed, note, area: saveArea ? area || null : null });
       if (mode !== scan.mode) setMode(scan.mode);
@@ -337,6 +383,11 @@ export default function App() {
         {tentative && <label className="confirm-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>I’ve reviewed the features and want to save a tentative identification.</span></label>}
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
         <button className="primary-button full-width" disabled={busy || (!!tentative && !confirmed)} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Add to {scan.mode === 'demo' ? 'sample NatureDex' : 'my NatureDex'}<ArrowRight size={17} /></button><button className="text-button full-width" disabled={busy} onClick={() => { setScan(null); setPreview(null); setActionError(''); }}>Try another discovery</button>
+      </div></div> : scan ? <div className="scan-result"><div className="result-photo">{preview && <img src={preview} alt="Captured specimen" />}<span className="photo-label">OFFLINE CAPTURE</span></div><div className="result-details"><p className="eyebrow"><Sparkles size={13} />SAVED TO QUEUE</p><h3>Offline Discovery</h3><p className="scientific-name">Awaiting reconnection</p><p className="identification-note"><Info size={16} />{scan.message}</p>
+        <label className="field-label">Field note <span>(optional)</span><textarea value={note} onChange={event => setNote(event.target.value)} maxLength={400} placeholder="What did you notice?" rows={2} /></label>
+        {saveArea && <label className="field-label">Approximate area <span>(optional, no GPS saved)</span><input maxLength={100} value={area} onChange={event => setArea(event.target.value)} placeholder="e.g. neighbourhood park" /></label>}
+        {actionError && <p className="error-box" role="alert">{actionError}</p>}
+        <button className="primary-button full-width" disabled={busy} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Queue offline discovery<ArrowRight size={17} /></button><button className="text-button full-width" disabled={busy} onClick={() => { setScan(null); setPreview(null); setActionError(''); }}>Take another photo</button>
       </div></div> : <div className="capture-content"><p>Photograph a leaf, a wing, or something wonderfully unfamiliar.</p><div className="capture-options" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) identify(file); }}><div className="capture-emblem"><Camera size={30} strokeWidth={1.4} /></div><h3>Something caught your eye?</h3><p>JPEG, PNG, WebP · up to 12 MB</p><button className="primary-button full-width" onClick={() => cameraRef.current?.click()}><Camera size={18} />Take a photo</button><button className="secondary-button full-width" onClick={() => fileRef.current?.click()}><ImagePlus size={18} />Choose from gallery</button></div><input ref={cameraRef} className="sr-only" tabIndex={-1} type="file" accept="image/*" capture="environment" onChange={event => { const file = event.target.files?.[0]; if (file) identify(file); event.target.value = ''; }} /><input ref={fileRef} className="sr-only" tabIndex={-1} type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) identify(file); event.target.value = ''; }} />
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
         <div className="recognition-status"><ShieldCheck size={17} /><p>{health?.model.enabled ? 'Local BioCLIP recognition is enabled. Photos are processed on your computer.' : 'Local AI needs one-time model setup. You can try the complete flow with a sample below.'}</p></div>

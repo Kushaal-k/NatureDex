@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { api, BackendUnavailable, PairingRequired } from '../src/api';
-import { loadFieldGuide } from '../src/snapshot';
+import { loadFieldGuide, putCachedPhoto, getCachedPhoto, queueOfflineObservation, getOfflineQueue, syncOfflineQueue } from '../src/snapshot';
 import type { Dashboard, Mode } from '../src/types';
 import { JSDOM } from 'jsdom';
 import { act, createElement, StrictMode } from 'react';
@@ -46,6 +46,82 @@ test('expired pairing asks for reconnection instead of silently restoring a cach
     const abort = new AbortController(); abort.abort();
     globalThis.fetch = async () => { throw new DOMException('Aborted','AbortError'); };
     await assert.rejects(loadFieldGuide('demo',abort.signal),{name:'AbortError'});
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('graceful offline snapshot permits read-only browsing on 401 when offline', async () => {
+  try {
+    globalThis.fetch = async () => Response.json(dashboard('demo'));
+    await loadFieldGuide('demo');
+
+    const originalNav = (globalThis as any).navigator;
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { onLine: false },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      globalThis.fetch = async () => new Response('Unauthorized', { status: 401 });
+      const offlineGuide = await loadFieldGuide('demo');
+      assert.equal(offlineGuide.offline, true);
+      assert.equal(offlineGuide.readOnly, true);
+      assert.equal(offlineGuide.dashboard.profile.xp, 430);
+    } finally {
+      if (originalNav) {
+        Object.defineProperty(globalThis, 'navigator', { value: originalNav, configurable: true, writable: true });
+      } else {
+        delete (globalThis as any).navigator;
+      }
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('photo blobs are cached in IndexedDB and offline observation queue auto-syncs', async () => {
+  try {
+    const testBlob = new Blob(['fake-image-bytes'], { type: 'image/jpeg' });
+    await putCachedPhoto('/photos/sample-test.jpg', testBlob);
+    const cached = await getCachedPhoto('/photos/sample-test.jpg');
+    assert.ok(cached);
+    assert.equal(cached.url, '/photos/sample-test.jpg');
+
+    await queueOfflineObservation({
+      id: 'offline-obs-1',
+      blob: testBlob,
+      mode: 'field',
+      note: 'Found under a rock',
+      area: 'Backyard',
+      createdAt: new Date().toISOString(),
+    });
+
+    const queued = await getOfflineQueue();
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].id, 'offline-obs-1');
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url === '/api/scans') {
+        return Response.json({
+          scan_id: 'scan-synced-1',
+          mode: 'field',
+          photo: '/photos/synced.jpg',
+          candidates: [{ species: { id: 'honey-bee', name: 'Western Honey Bee' }, score: 0.95 }],
+          uncertain: false,
+          message: 'Match found',
+          score_note: '',
+        });
+      }
+      if (url === '/api/observations') {
+        return Response.json({ xp: 50, new_species: true, species: { id: 'honey-bee', name: 'Western Honey Bee' } });
+      }
+      return Response.json({});
+    };
+
+    const syncResult = await syncOfflineQueue();
+    assert.equal(syncResult.synced, 1);
+    assert.equal(syncResult.failed, 0);
+
+    const remaining = await getOfflineQueue();
+    assert.equal(remaining.length, 0);
   } finally { globalThis.fetch = originalFetch; }
 });
 

@@ -14,3 +14,4 @@ tools/
 .coverage
 htmlcov/
 *.log
+test_scratch.txt

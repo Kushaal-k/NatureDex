@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parents[2]
 COOKIE = "__Host-naturedex"
 MAX_BODY = 12 * 1024 * 1024 + 64 * 1024
-API_PATH = re.compile(r"/api/(?:health|dashboard|export|scans(?:/sample)?|observations|expeditions/[a-z0-9-]+/(?:start|claim))\Z")
+API_PATH = re.compile(r"/api/(?:health|dashboard|export|scans(?:/sample)?|observations(?:/[a-z0-9-]+/details)?|expeditions/[a-z0-9-]+/(?:start|claim))\Z")
 PHOTO_PATH = re.compile(r"/photos/[0-9a-f-]{36}\.jpg\Z")
 
 

@@ -56,6 +56,15 @@ def test_oversized_request_rejected_before_upstream(mobile):
     pair(mobile)
     assert mobile.post("/api/scans", content=b"a" * (MAX_BODY + 1), headers=ORIGIN).status_code == 413
 
+def test_pins_and_notes_use_the_protected_phone_gateway(mobile):
+    route = '/api/observations/seed-0/details'
+    assert mobile.post(route,json={'mode':'demo','latitude':22,'longitude':88},headers=ORIGIN).status_code == 401
+    pair(mobile)
+    assert mobile.post(route,json={},headers={'Origin':'https://other.test'}).status_code == 403
+    response = mobile.post(route,json={'mode':'demo','latitude':22,'longitude':88},headers=ORIGIN)
+    assert response.status_code == 200
+    assert response.json()['path'] == route
+
 def test_gateway_fails_closed_without_secret():
     with pytest.raises(ValueError):
         create_mobile_app("")

@@ -44,6 +44,11 @@ def initialize():
                 data TEXT NOT NULL, PRIMARY KEY(id, day, mode)
             );
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS offline_saves (id TEXT PRIMARY KEY, response TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS observation_places (
+                observation_id TEXT PRIMARY KEY REFERENCES observations(id) ON DELETE CASCADE,
+                latitude REAL NOT NULL, longitude REAL NOT NULL
+            );
         ''')
         for species in CATALOG:
             c.execute("INSERT INTO species VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", (species["id"], json.dumps(species)))
@@ -101,7 +106,7 @@ def dashboard(mode):
     today = datetime.now().astimezone().date()
     with db() as c:
         items = collection(c, mode)
-        observations = [dict(r) for r in c.execute("SELECT o.*, s.data FROM observations o JOIN species s ON o.species_id=s.id WHERE mode=? ORDER BY found_at DESC", (mode,))]
+        observations = [dict(r) for r in c.execute("SELECT o.*, s.data, p.latitude, p.longitude FROM observations o JOIN species s ON o.species_id=s.id LEFT JOIN observation_places p ON p.observation_id=o.id WHERE mode=? ORDER BY found_at DESC", (mode,))]
         for o in observations:
             species = json.loads(o.pop("data"))
             o.update(name=species["name"], category=species["category"], image=o["photo"] or species["image"])

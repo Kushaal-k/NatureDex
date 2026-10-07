@@ -1,5 +1,5 @@
 export type Mode = 'demo' | 'field';
-export type Page = 'explore' | 'dex' | 'expeditions' | 'journal' | 'achievements';
+export type Page = 'explore' | 'dex' | 'map' | 'walk' | 'expeditions' | 'journal' | 'achievements';
 export interface Species {
   id: string; name: string; scientific: string; category: string; rarity: string;
   fact: string; habitat: string; image: string; tags: string[];
@@ -8,6 +8,7 @@ export interface Species {
 export interface Observation {
   id: string; species_id: string; name: string; category: string; image: string;
   found_at: string; xp: number; area: string | null; note: string; score: number | null;
+  latitude?: number | null; longitude?: number | null;
 }
 export interface Expedition {
   id: string; title: string; subtitle: string; duration: number; xp: number; theme: string;

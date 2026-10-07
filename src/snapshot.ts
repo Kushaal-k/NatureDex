@@ -16,6 +16,10 @@ export interface QueuedObservation {
   note: string;
   area: string | null;
   createdAt: string;
+  scan?: Scan;
+  reviewRequired?: boolean;
+  walkId?: string;
+  walkName?: string;
 }
 
 function openStore(): Promise<IDBDatabase> {
@@ -195,30 +199,52 @@ export async function removeQueuedObservation(id: string): Promise<void> {
   } finally { db.close(); }
 }
 
-export async function syncOfflineQueue(): Promise<{ synced: number; failed: number }> {
+interface SyncResult { synced: number; failed: number }
+let activeSync: Promise<SyncResult> | null = null;
+export function syncOfflineQueue(): Promise<SyncResult> {
+  if (activeSync) return activeSync;
+  const work = () => runOfflineSync();
+  activeSync = (typeof navigator !== 'undefined' && navigator.locks
+    ? navigator.locks.request('naturedex-offline-sync', work)
+    : work()).finally(() => { activeSync = null; });
+  return activeSync;
+}
+
+async function runOfflineSync(): Promise<SyncResult> {
   const queue = await getOfflineQueue().catch(() => []);
   if (queue.length === 0) return { synced: 0, failed: 0 };
   let synced = 0;
   let failed = 0;
   for (const item of queue) {
+    // Walk photos are deliberately held for review, even while connected.
+    if (item.reviewRequired) continue;
     try {
       const form = new FormData();
       form.append('file', item.blob, `offline-${item.id}.jpg`);
-      const scan = await api<Scan>('/scans', { method: 'POST', body: form });
+      const scan = item.scan || await api<Scan>('/scans', { method: 'POST', body: form });
+      if (!item.scan) await queueOfflineObservation({ ...item, scan });
+      // Retain the photo and candidates until the user reviews a tentative match.
+      if (scan.uncertain) continue;
       await api('/observations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scan_id: scan.scan_id,
           candidate: 0,
-          confirm_uncertain: true,
+          confirm_uncertain: false,
+          offline_id: item.id,
+          captured_at: item.createdAt,
           note: item.note,
           area: item.area,
         }),
       });
       await removeQueuedObservation(item.id);
       synced++;
-    } catch {
+    } catch (error) {
+      // A cached unsaved scan may expire after a long offline period.
+      if (error instanceof Error && /expired/i.test(error.message)) {
+        await queueOfflineObservation({ ...item, scan: undefined });
+      }
       failed++;
     }
   }

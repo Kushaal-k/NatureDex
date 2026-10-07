@@ -19,7 +19,16 @@ Open **http://127.0.0.1:5173**. `npm run dev` starts both servers. An existing p
 
 The app starts in **Sample mode** with six example discoveries and an 18-species illustrated field guide. Open **Make a discovery**, choose a sample, and save it to try the full collecting flow. Start the pollinator expedition, then save a hibiscus, plain tiger, and honey bee to complete it. Claim the reward to earn 350 sample XP.
 
-Use **Settings → My real collection** to start from zero. Samples have separate observations, XP, expedition progress, and badges. They never become real model identifications. A photo upload returns a clear setup message until the model is installed and enabled.
+Use **Settings → My collection** for your own sightings. Practice discoveries have separate observations, XP, expedition progress, and badges. They never become real model identifications. A photo upload returns a clear availability message until identification is enabled.
+
+## Outdoor features
+
+- **Match cards:** compare the three closest candidates and choose an alternative. Alternate or uncertain matches require confirmation. “None of these” keeps a real photo in the review queue without adding a sighting or awarding XP. Images are labelled as decorative illustrations, previous sighting photos, or unavailable references; the app does not invent species-specific diagnostic features.
+- **Discovery map:** select a saved sighting and place a pin by tapping the map or entering coordinates. Pins and place names persist in SQLite and appear in exports and synced snapshots. No automatic GPS permission or tracking is used. The bundled [Natural Earth](https://www.naturalearthdata.com/about/terms-of-use/) public-domain land outline works offline. Street details are optional and request the viewed area from OpenStreetMap; they are not precached or offered as offline downloads.
+- **Species history:** open a collected species to browse all sighting photos, dates, notes, and place names. Notes and place names can be edited when connected, and each sighting links to its map pin.
+- **Walk mode:** start a named walk, capture a photo or add several from the gallery, and finish whenever you like. Photos and notes remain in IndexedDB on that device, with capture timestamps and the walk name. Walk drafts are never uploaded or saved by background sync, even for strong matches. Choose **Identify photo**, review the result, and explicitly add it to your collection. An unfinished walk resumes after reopening the app. Discarded drafts can be restored with **Undo** while that screen remains open.
+
+On phones, **More** opens Expeditions, Field journal, Achievements, and Settings. Practice mode affects the displayed collection; real photo captures always belong to the personal collection.
 
 ## Enable real local identification
 
@@ -119,7 +128,7 @@ If TCP is also blocked, use a network that permits the tunnel or configure a pri
 
 The phone's photos, notes, and pairing request pass through Cloudflare's HTTPS tunnel to your computer. Discoveries remain stored in your computer's database; the synced guide also persists on the phone. Removing GPS happens on the computer after upload. Cloudflare terminates HTTPS, so this is not end-to-end encryption between phone and computer. For a private network alternative, run the same gateway behind your own HTTPS VPN rather than a public tunnel.
 
-**Offline:** after the first successful load, the app shell, bundled illustrations, and last synced field guide open without a connection. New scans, saved discoveries, and expedition rewards require a reachable backend; those actions are disabled in the saved-guide view. Uploaded photos are not cached. You can export the cached journal as JSON. The BioCLIP model still needs its one-time setup on the computer; installing the phone app does not install or run that model on the phone.
+**Offline:** after the first successful load, the app shell, bundled illustrations, last synced field guide, and locally cached observation photos remain available. You can capture photos, add notes, and queue them on this device. Reconnection identifies queued photos; strong matches save automatically, while tentative matches stay in the queue for **Review saved photos** and explicit confirmation. The queue banner also provides a manual sync/retry action. Original capture times are preserved for the journal, streaks, and expeditions. A persisted save ID prevents duplicate observations and XP if sync overlaps or a response is lost. Failed uploads retain the original photo for retry. Expedition starts and rewards still need a reachable backend. The BioCLIP model needs its one-time setup on the computer; installing the phone app does not run the model on the phone.
 
 ## Data and game rules
 

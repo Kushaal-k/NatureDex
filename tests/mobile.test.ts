@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { api, BackendUnavailable, PairingRequired } from '../src/api';
-import { loadFieldGuide, putCachedPhoto, getCachedPhoto, queueOfflineObservation, getOfflineQueue, syncOfflineQueue } from '../src/snapshot';
+import { loadFieldGuide, putCachedPhoto, getCachedPhoto, queueOfflineObservation, getOfflineQueue, removeQueuedObservation, syncOfflineQueue } from '../src/snapshot';
 import type { Dashboard, Mode } from '../src/types';
 import { JSDOM } from 'jsdom';
 import { act, createElement, StrictMode } from 'react';
@@ -125,6 +125,53 @@ test('photo blobs are cached in IndexedDB and offline observation queue auto-syn
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('overlapping syncs save once and retain the original capture date and retry ID', async () => {
+  const createdAt = '2026-01-02T10:30:00.000Z';
+  let scans = 0;
+  const saves: any[] = [];
+  try {
+    await queueOfflineObservation({id:'concurrent-photo',blob:new Blob(['photo']),mode:'field',note:'leaf',area:null,createdAt});
+    globalThis.fetch = async (input, init) => {
+      if (String(input) === '/api/scans') {
+        scans++;
+        await new Promise(resolve=>setTimeout(resolve,10));
+        return Response.json({scan_id:'single-scan',uncertain:false,candidates:[]});
+      }
+      saves.push(JSON.parse(String(init?.body)));
+      return Response.json({xp:50});
+    };
+    await Promise.all([syncOfflineQueue(),syncOfflineQueue()]);
+    assert.equal(scans,1);
+    assert.equal(saves.length,1);
+    assert.equal(saves[0].offline_id,'concurrent-photo');
+    assert.equal(saves[0].captured_at,createdAt);
+    assert.equal(saves[0].confirm_uncertain,false);
+  } finally { globalThis.fetch=originalFetch; await removeQueuedObservation('concurrent-photo'); }
+});
+
+test('uncertain queued scans wait for review and reuse their candidates on retry', async () => {
+  let scans = 0;
+  let saves = 0;
+  try {
+    await queueOfflineObservation({id:'tentative-photo',blob:new Blob(['photo']),mode:'field',note:'',area:null,createdAt:new Date().toISOString()});
+    globalThis.fetch = async input => {
+      if (String(input) === '/api/scans') {
+        scans++;
+        return Response.json({scan_id:'tentative-scan',uncertain:true,candidates:[{score:.1,species:{id:'test'}}]});
+      }
+      saves++;
+      return Response.json({});
+    };
+    await syncOfflineQueue();
+    await syncOfflineQueue();
+    assert.equal(scans,1);
+    assert.equal(saves,0);
+    const item = (await getOfflineQueue()).find(item=>item.id==='tentative-photo');
+    assert.equal(item?.scan?.scan_id,'tentative-scan');
+    assert.equal(item?.blob.size,5);
+  } finally { globalThis.fetch=originalFetch; await removeQueuedObservation('tentative-photo'); }
+});
+
 test('service worker serves its shell offline and never intercepts private APIs or photos', async () => {
   const listeners:Record<string,(event:any)=>void> = {};
   const shell = new Response('<html>Saved NatureDex</html>');
@@ -143,6 +190,22 @@ test('service worker serves its shell offline and never intercepts private APIs 
   let response:Promise<Response>|undefined;
   listeners.fetch({request:{url:'https://phone.test/',method:'GET',mode:'navigate'},respondWith:(value:Promise<Response>)=>response=value});
   assert.equal(await (await response!).text(),'<html>Saved NatureDex</html>');
+});
+
+test('walk drafts remain private and unsaved through background sync, even for strong matches', async () => {
+  const id = 'held-walk-photo';
+  await queueOfflineObservation({id, blob:new Blob(['walk-photo'],{type:'image/jpeg'}), mode:'field', note:'By the stream', area:'Park', createdAt:'2026-10-07T10:00:00Z', reviewRequired:true, walkId:'walk-one', walkName:'Morning stroll', scan:{scan_id:'strong-match',mode:'field',photo:null,uncertain:false,message:'Match',score_note:'',candidates:[]}});
+  let requests = 0;
+  try {
+    globalThis.fetch = async()=>{ requests++; throw new Error('Walk photos must not be sent in the background'); };
+    await syncOfflineQueue();
+    assert.equal(requests,0);
+    const stored = (await getOfflineQueue()).find(item=>item.id===id)!;
+    assert.equal(stored.blob.size,10);
+    assert.equal(stored.walkName,'Morning stroll');
+    assert.equal(stored.createdAt,'2026-10-07T10:00:00Z');
+    assert.equal(stored.reviewRequired,true);
+  } finally { globalThis.fetch=originalFetch; await removeQueuedObservation(id); }
 });
 
 async function phoneBrowser(initialHash:string, check:(dom:JSDOM, codes:string[])=>Promise<void>) {
@@ -189,7 +252,7 @@ test('opening the private link in an already loaded pairing screen connects with
     await settleBrowser();
     assert.deepEqual(codes,['private-reopened-link']);
     assert.equal(dom.window.location.hash,'');
-    assert.match(dom.window.document.body.textContent || '',/Wonder is all around you/);
+    assert.match(dom.window.document.body.textContent || '',/Adventure starts outside/);
   });
 });
 
@@ -198,6 +261,102 @@ test('a fresh private link pairs exactly once even when React repeats startup ef
     await settleBrowser();
     assert.deepEqual(codes,['private-first-link']);
     assert.equal(dom.window.location.hash,'');
-    assert.match(dom.window.document.body.textContent || '',/Wonder is all around you/);
+    assert.match(dom.window.document.body.textContent || '',/Adventure starts outside/);
   });
+});
+
+test('walk mode captures multiple photos without inference and keeps them after finishing', async()=>{
+  const ids:string[] = [];
+  try {
+    await phoneBrowser('#pair=walk-test',async(dom)=>{
+      await settleBrowser();
+      const button = (text:string) => Array.from(dom.window.document.querySelectorAll('button')).find(b=>b.textContent?.trim()===text)!;
+      await act(async()=>button('Walk').click());
+      await act(async()=>button('Start a walk').click());
+      const session=JSON.parse(dom.window.localStorage.getItem('naturedex-walk')!);
+      assert.ok(session.id);
+      let inference=0;
+      const savedFetch=globalThis.fetch;
+      globalThis.fetch=async(input, init)=>{ if(String(input)==='/api/scans') inference++; return savedFetch(input,init); };
+      const upload=dom.window.document.querySelector<HTMLInputElement>('input[type=file][multiple]')!;
+      Object.defineProperty(upload,'files',{value:[new File(['one'],'one.jpg',{type:'image/jpeg'}),new File(['two'],'two.jpg',{type:'image/jpeg'})],configurable:true});
+      await act(async()=>{ upload.dispatchEvent(new dom.window.Event('change',{bubbles:true})); await new Promise(resolve=>setTimeout(resolve,40)); });
+      const stored=(await getOfflineQueue()).filter(item=>item.walkId===session.id);
+      ids.push(...stored.map(item=>item.id));
+      assert.equal(stored.length,2);
+      assert.equal(inference,0);
+      assert.ok(stored.every(item=>item.reviewRequired && item.mode==='field' && item.createdAt));
+      await act(async()=>button('Finish walk').click());
+      assert.equal(dom.window.localStorage.getItem('naturedex-walk'),null);
+      assert.equal((await getOfflineQueue()).filter(item=>ids.includes(item.id)).length,2);
+      assert.match(dom.window.document.body.textContent || '',/2 photos to review/);
+    });
+  } finally { for(const id of ids) await removeQueuedObservation(id); }
+});
+
+test('reviewing a saved tentative photo requires confirmation and saves its capture date', async()=>{
+  const species = {id:'test-leaf',name:'Test leaf',scientific:'Testus leaf',category:'Plants',rarity:'Unrated',
+    image:'/specimens/unknown.svg',tags:[],taxonomy:{},fact:'Compare visible features',habitat:'Unknown',
+    sightings:0,first_found:null,last_found:null};
+  const createdAt = '2026-01-02T10:30:00.000Z';
+  await queueOfflineObservation({id:'review-ui-photo',blob:new Blob(['photo']),mode:'field',note:'Original note',area:null,createdAt,
+    scan:{scan_id:'review-scan',mode:'field',photo:null,uncertain:true,message:'Possible match',score_note:'Not a probability',
+      candidates:[{species,score:.1}]}});
+  try {
+    await phoneBrowser('#pair=review-test',async(dom)=>{
+      await settleBrowser();
+      const lookup = (text:string) => Array.from(dom.window.document.querySelectorAll('button')).find(button=>button.textContent?.includes(text))!;
+      await act(async()=>lookup('Review saved photos').click());
+      assert.match(dom.window.document.body.textContent || '',/Test leaf/);
+      assert.equal(lookup('Add to my NatureDex').disabled,true);
+      await act(async()=>dom.window.document.querySelector<HTMLInputElement>('.confirm-check input')!.click());
+      assert.equal(lookup('Add to my NatureDex').disabled,false);
+      const savedFetch = globalThis.fetch;
+      let body:any;
+      globalThis.fetch = async(input, init)=>{
+        if (String(input)==='/api/observations') {
+          body=JSON.parse(String(init?.body));
+          return Response.json({xp:50,new_species:true,species});
+        }
+        return savedFetch(input,init);
+      };
+      await act(async()=>{ lookup('Add to my NatureDex').click(); await new Promise(resolve=>setTimeout(resolve,30)); });
+      await settleBrowser();
+      assert.equal(body.offline_id,'review-ui-photo');
+      assert.equal(body.captured_at,createdAt);
+      assert.equal(body.confirm_uncertain,true);
+      assert.equal((await getOfflineQueue()).some(item=>item.id==='review-ui-photo'),false);
+    });
+  } finally { await removeQueuedObservation('review-ui-photo'); }
+});
+
+test('rejecting all matches keeps the original walk photo for another look without awarding XP', async()=>{
+  const id='reject-walk-photo';
+  const species={id:'test-leaf',name:'Test leaf',scientific:'Testus leaf',category:'Plants',rarity:'Unrated',image:'/specimens/unknown.svg',tags:[],taxonomy:{},fact:'Compare visible features',habitat:'Unknown',sightings:0,first_found:null,last_found:null};
+  await queueOfflineObservation({id,blob:new Blob(['original'],{type:'image/jpeg'}),mode:'field',note:'Original note',area:'Park',createdAt:'2026-10-07T10:00:00Z',reviewRequired:true,walkId:'original-walk',scan:{scan_id:'rejected-scan',mode:'field',photo:null,uncertain:false,message:'Match',score_note:'',candidates:[{species,score:.9}]}});
+  try {
+    await phoneBrowser('#pair=reject-test',async(dom)=>{
+      await settleBrowser();
+      const button=(text:string)=>Array.from(dom.window.document.querySelectorAll('button')).find(b=>b.textContent?.includes(text))!;
+      await act(async()=>button('Review saved photos').click());
+      let saves=0;
+      const savedFetch=globalThis.fetch;
+      globalThis.fetch=async(input,init)=>{ if(String(input)==='/api/observations') saves++; return savedFetch(input,init); };
+      await act(async()=>{
+        button('None of these').click();
+        for (let i=0; i<100; i++) {
+          await new Promise(resolve=>setTimeout(resolve,10));
+          if (dom.window.document.querySelector('.walk-drafts')) break;
+        }
+      });
+      const held=(await getOfflineQueue()).find(item=>item.id===id)!;
+      assert.equal(held.scan,undefined);
+      assert.equal(held.reviewRequired,true);
+      assert.equal(held.blob.size,8);
+      assert.equal(held.createdAt,'2026-10-07T10:00:00Z');
+      assert.equal(held.walkId,'original-walk');
+      assert.equal(saves,0);
+      assert.match(dom.window.document.body.textContent || '',/1 photo to review/);
+    });
+  } finally { await removeQueuedObservation(id); }
 });

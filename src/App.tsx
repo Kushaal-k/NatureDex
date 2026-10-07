@@ -1,19 +1,28 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { specimenArtwork } from './artwork';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRight, ArrowUpRight, Bird, BookOpen, Bug, Camera, Check, CheckCircle2,
   ChevronRight, Clock3, Compass, Download, Flame, ImagePlus, Info, Leaf,
   Loader2, LockKeyhole, MapPin, Umbrella as Mushroom, NotebookPen, Search, Settings,
-  ShieldCheck, Smartphone, Sparkles, Sprout, Sun, TreePine, Trophy, WifiOff, X,
+  ShieldCheck, Smartphone, Sparkles, Sprout, Sun, TreePine, Trophy, WifiOff, X, Footprints, Menu,
 } from 'lucide-react';
 import { api, PairingRequired, post } from './api';
 import { useInstall } from './install';
-import { loadFieldGuide, queueOfflineObservation, syncOfflineQueue } from './snapshot';
+import { getOfflineQueue, loadFieldGuide, queueOfflineObservation, removeQueuedObservation, syncOfflineQueue, type QueuedObservation } from './snapshot';
 import { pairPhone, takePairingCode } from './pairing';
+import { sfx } from './audio';
+import { Matches } from './Matches';
+import { SightingHistory } from './SightingHistory';
+import { Walk, readWalk, type WalkSession } from './Walk';
 import type { Achievement, Dashboard, Expedition, Health, Mode, Page, Scan, Species } from './types';
+
+const DiscoveryMap = lazy(() => import('./DiscoveryMap').then(module => ({ default:module.DiscoveryMap })));
 
 const navigation: { id: Page; name: string; icon: typeof Compass }[] = [
   { id: 'explore', name: 'Explore', icon: Compass },
   { id: 'dex', name: 'My NatureDex', icon: BookOpen },
+  { id: 'walk', name: 'Walk mode', icon: Footprints },
+  { id: 'map', name: 'Discovery map', icon: MapPin },
   { id: 'expeditions', name: 'Expeditions', icon: TreePine },
   { id: 'journal', name: 'Field journal', icon: NotebookPen },
   { id: 'achievements', name: 'Achievements', icon: Trophy },
@@ -22,7 +31,11 @@ const categories = ['All species', 'Plants', 'Birds', 'Insects', 'Fungi', 'Repti
 const categoryIcons: Record<string, typeof Leaf> = { Plants: Leaf, Birds: Bird, Insects: Bug, Fungi: Mushroom, Reptiles: Sun, Other: Compass };
 const achievementIcons: Record<string, typeof Leaf> = { leaf: Sprout, bird: Bird, bug: Bug, mushroom: Mushroom, compass: Compass, sun: Sun };
 const readableDate = (value: string | null, short = false) => value ? new Date(value).toLocaleDateString(undefined, { month: short ? 'short' : 'long', day: 'numeric', ...(short ? {} : { year: 'numeric' }) }) : 'Not yet discovered';
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Please try again.';
+const errorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : 'Please try again.';
+  return /bioclip|dependencies|model|traceback|readme/i.test(message)
+    ? 'Photo identification is unavailable right now. Please try again later.' : message;
+};
 
 function Dialog({ title, children, close, wide = false }: { title: string; children: ReactNode; close: () => void; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -49,7 +62,7 @@ function Dialog({ title, children, close, wide = false }: { title: string; child
   useEffect(() => { if (!ref.current?.contains(document.activeElement)) ref.current?.focus(); }, [children]);
   return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={ref} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="dialog-title" tabIndex={-1}>
-      <div className="modal-heading"><h2 id="dialog-title">{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={close}><X size={21} /></button></div>
+      <div className="modal-heading"><h2 id="dialog-title">{title}</h2><button className="icon-button" data-sfx="back" aria-label="Close dialog" onClick={close}><X size={21} /></button></div>
       {children}
     </div>
   </div>;
@@ -60,7 +73,7 @@ function SpeciesCard({ species, index, onClick }: { species: Species; index: num
   const Icon = categoryIcons[species.category] || Compass;
   return <button className={`species-card ${unlocked ? '' : 'undiscovered'}`} onClick={onClick} aria-label={unlocked ? `View ${species.name}` : `Undiscovered ${species.category.toLowerCase()} species ${index+1}`}>
     <div className="specimen"><span className="specimen-number">#{String(index+1).padStart(3, '0')}</span>
-      {unlocked ? <><img src={species.image} alt={species.name} loading="lazy" /><span className="collected-check"><Check size={12} /></span></> : <div className="unknown-specimen"><Icon size={59} strokeWidth={1} /><span>?</span></div>}
+      {unlocked ? <><img src={specimenArtwork(species.image)} alt={species.name} loading="lazy" /><span className="collected-check"><Check size={12} /></span></> : <div className="unknown-specimen"><Icon size={59} strokeWidth={1} /><span>?</span></div>}
     </div>
     <div className="species-card-info"><span className="species-category"><Icon size={12} />{species.category}</span><h3>{unlocked ? species.name : 'A discovery awaits'}</h3>
       <p>{unlocked ? species.scientific : 'Keep your eyes curious'}</p>
@@ -71,7 +84,7 @@ function SpeciesCard({ species, index, onClick }: { species: Species; index: num
 
 function ExpeditionCard({ expedition, onClick }: { expedition: Expedition; onClick: () => void }) {
   return <button className={`expedition-card ${expedition.theme}`} onClick={onClick}>
-    <div className="expedition-art"><img src="/field-scene.svg" alt="" /><span className="expedition-time"><Clock3 size={13} />{expedition.duration} min outdoors</span></div>
+    <div className="expedition-art"><img src="/pixel-field-scene.svg" alt="" /><span className="expedition-time"><Clock3 size={13} />{expedition.duration} min outdoors</span></div>
     <div className="expedition-card-body"><div className="eyebrow">{expedition.claimed ? 'Completed today' : expedition.active ? 'Your active expedition' : 'A little adventure'}<span><Sparkles size={13} />{expedition.xp} XP</span></div>
       <h3>{expedition.title}</h3><p>{expedition.subtitle}</p>
       <div className="expedition-card-footer"><span>{expedition.claimed ? 'Reward earned. Well explored!' : expedition.active ? `${expedition.completed} of ${expedition.goals.length} discoveries` : `${expedition.goals.length} things to discover`}</span><ArrowRight size={18} /></div>
@@ -122,6 +135,13 @@ export default function App() {
   const [note, setNote] = useState('');
   const [area, setArea] = useState('');
   const [toast, setToast] = useState('');
+  const [sound, setSound] = useState(() => sfx.isEnabled());
+  const [queued, setQueued] = useState<QueuedObservation[]>([]);
+  const [queuedReview, setQueuedReview] = useState<QueuedObservation | null>(null);
+  const [activeWalk, setActiveWalk] = useState<WalkSession | null>(readWalk);
+  const [mapObservation, setMapObservation] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const capturedAt = useRef<string>('');
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
@@ -175,10 +195,14 @@ export default function App() {
   }, [mode, connectionVersion]);
 
   useEffect(() => {
+    let active = true;
+    getOfflineQueue().then(items => { if (active) setQueued(items); }).catch(() => {});
     const triggerSync = () => {
       syncOfflineQueue().then(({ synced }) => {
+        if (!active) return;
+        getOfflineQueue().then(items => { if (active) setQueued(items); }).catch(() => {});
         if (synced > 0) {
-          notify(`Synced ${synced} offline discovery${synced > 1 ? 's' : ''}!`);
+          notify(`Saved ${synced} discovery${synced > 1 ? 's' : ''}!`);
           refresh();
         }
       }).catch(() => {});
@@ -189,19 +213,34 @@ export default function App() {
     };
     window.addEventListener('online', reconnect);
     if (!offline) triggerSync();
-    return () => window.removeEventListener('online', reconnect);
+    return () => { active = false; window.removeEventListener('online', reconnect); };
   }, [offline, refresh, notify]);
 
   useEffect(() => { localStorage.setItem('naturedex-name', name); }, [name]);
   useEffect(() => { localStorage.setItem('naturedex-save-area', String(saveArea)); }, [saveArea]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [page]);
   useEffect(() => () => { controller.current?.abort(); if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  // One listener gives every control its chiptune voice; data-sfx selects the tone.
+  useEffect(() => {
+    const handler = (event: MouseEvent) => {
+      const control = (event.target as HTMLElement | null)?.closest<HTMLElement>('button, a[href]');
+      if (!control || control.hasAttribute('disabled')) return;
+      const tone = control.dataset.sfx;
+      if (tone === 'select') sfx.playSelect();
+      else if (tone === 'scan') sfx.playScan();
+      else if (tone === 'back') sfx.playCancel();
+      else sfx.playClick();
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   function closeDialog() {
-    controller.current?.abort(); setDialog(null); setBusy(false); setActionError('');
+    controller.current?.abort(); setDialog(null); setBusy(false); setActionError(''); setQueuedReview(null);
   }
   function startScan() {
+    setQueuedReview(null);
     setScan(null); setPreview(null); setConfirmed(false); setCandidateIndex(0); setNote(''); setArea(''); setActionError(''); setDialog('scan');
   }
   async function sample(species: Species) {
@@ -211,10 +250,12 @@ export default function App() {
     catch (error) { if (!controller.current.signal.aborted) setActionError(errorMessage(error)); }
     finally { if (!controller.current.signal.aborted) setBusy(false); }
   }
-  async function identify(file: File) {
+  async function identify(file: File, reviewItem?: QueuedObservation) {
+    capturedAt.current = reviewItem?.createdAt || new Date().toISOString();
     if (file.size > 12 * 1024 * 1024) { setActionError('Choose a photo smaller than 12 MB.'); return; }
     if (!file.type.startsWith('image/')) { setActionError('Choose an image file.'); return; }
     controller.current?.abort(); controller.current = new AbortController();
+    sfx.playScan();
     setPreview(URL.createObjectURL(file)); setScan(null); setBusy(true); setActionError('');
     if (offline) {
       setScan({
@@ -223,8 +264,8 @@ export default function App() {
         photo: null,
         candidates: [],
         uncertain: false,
-        message: 'Saved for offline sync. This observation will be identified when you reconnect.',
-        score_note: 'Stored locally in IndexedDB.',
+        message: 'Save this photo now and identify it when you reconnect.',
+        score_note: '',
       });
       setCandidateIndex(0);
       setConfirmed(true);
@@ -234,6 +275,11 @@ export default function App() {
     const form = new FormData(); form.append('file', file);
     try {
       const result = await api<Scan>('/scans', { method: 'POST', body: form, signal: controller.current.signal });
+      if (reviewItem) {
+        await queueOfflineObservation({ ...reviewItem, scan: result });
+        setQueuedReview({ ...reviewItem, scan: result });
+        setQueued(await getOfflineQueue());
+      }
       setScan(result); setCandidateIndex(0); setConfirmed(false);
       setHealth(await api<Health>('/health'));
     } catch (error) { if (!controller.current.signal.aborted) setActionError(errorMessage(error)); }
@@ -242,39 +288,89 @@ export default function App() {
   async function saveDiscovery() {
     if (!scan) return;
     setBusy(true); setActionError('');
+    if (queuedReview && offline) { setBusy(false); setActionError('Reconnect to save this reviewed identification.'); return; }
     if (offline && preview) {
       try {
         const res = await fetch(preview);
         const blob = await res.blob();
         await queueOfflineObservation({
-          id: 'offline-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+          id: crypto.randomUUID(),
           blob,
-          mode,
+          mode: 'field',
           note,
           area: saveArea ? area || null : null,
-          createdAt: new Date().toISOString(),
+          createdAt: capturedAt.current || new Date().toISOString(),
         });
+        setQueued(await getOfflineQueue());
         closeDialog();
-        notify('Observation queued offline! Will automatically sync and identify when reconnected.');
+        sfx.playSelect();
+        notify('Photo saved. It will be identified when you reconnect.');
       } catch (error) { setActionError(errorMessage(error)); }
       finally { setBusy(false); }
       return;
     }
     try {
-      const result = await post<{ xp: number; new_species: boolean; species: Species }>('/observations', { scan_id: scan.scan_id, candidate: candidateIndex, confirm_uncertain: confirmed, note, area: saveArea ? area || null : null });
+      const result = await post<{ xp: number; new_species: boolean; species: Species }>('/observations', { scan_id: scan.scan_id, candidate: candidateIndex, confirm_uncertain: confirmed, note, area: saveArea ? area || null : null,
+        ...(queuedReview ? { offline_id: queuedReview.id, captured_at: queuedReview.createdAt } : {}) });
+      if (queuedReview) {
+        await removeQueuedObservation(queuedReview.id);
+        setQueued(await getOfflineQueue());
+      }
       if (mode !== scan.mode) setMode(scan.mode);
       else await refresh();
       closeDialog();
+      if (result.new_species) sfx.playFanfare(); else sfx.playSelect();
       notify(`${result.new_species ? 'New species unlocked' : 'Another sighting saved'} · ${result.species.name} · +${result.xp} XP${scan.mode === 'demo' ? ' (sample)' : ''}`);
+    } catch (error) {
+      if (queuedReview && /expired/i.test(errorMessage(error))) {
+        await queueOfflineObservation({ ...queuedReview, scan: undefined });
+        setQueued(await getOfflineQueue());
+      }
+      setActionError(errorMessage(error));
+    }
+    finally { setBusy(false); }
+  }
+
+  async function syncSavedPhotos() {
+    setBusy(true);
+    try {
+      const result = await syncOfflineQueue();
+      setQueued(await getOfflineQueue());
+      if (result.synced) await refresh();
+      notify(result.failed ? 'Some saved photos could not sync. They are still on this device; reconnect and retry.' : 'Saved photos synced. Review any tentative matches before saving.');
+    } catch (error) { notify(errorMessage(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function reviewSavedPhoto(chosen?: QueuedObservation) {
+    const item = chosen || queued.find(item => item.reviewRequired || item.scan?.uncertain);
+    if (!item) return;
+    setQueuedReview(item); setScan(item.scan || null); setPreview(URL.createObjectURL(item.blob));
+    setNote(item.note); setArea(item.area || ''); setCandidateIndex(0); setConfirmed(false);
+    setActionError(''); setDialog('scan');
+    if (!item.scan) await identify(new File([item.blob], 'walk-photo.jpg', { type:item.blob.type || 'image/jpeg' }), item);
+  }
+
+  async function rejectMatch() {
+    if (!scan || !preview) return;
+    setBusy(true); setActionError('');
+    try {
+      const blob = queuedReview?.blob || await (await fetch(preview)).blob();
+      await queueOfflineObservation({ ...queuedReview, id:queuedReview?.id || crypto.randomUUID(), blob, mode:'field', note, area:area || null, createdAt:queuedReview?.createdAt || capturedAt.current, scan:undefined, reviewRequired:true });
+      setQueued(await getOfflineQueue()); closeDialog(); setPage('walk');
+      notify('Photo kept for another look. Try a closer photo or a different angle.');
     } catch (error) { setActionError(errorMessage(error)); }
     finally { setBusy(false); }
   }
+
+  function openMap(id: string) { closeDialog(); setMapObservation(id); setPage('map'); }
   async function expeditionAction(expedition: Expedition, claim = false) {
     if (offline) { setActionError('Reconnect to start an expedition or claim a reward.'); return; }
     setBusy(true); setActionError('');
     try {
       const result = await post<{ xp?: number }>(`/expeditions/${expedition.id}/${claim ? 'claim' : 'start'}`, { mode });
       await refresh();
+      if (claim) sfx.playFanfare();
       notify(claim ? `Expedition complete! +${result.xp} XP${mode === 'demo' ? ' (sample)' : ''}` : 'Expedition started. Your next discoveries count toward the goals.');
     } catch (error) { setActionError(errorMessage(error)); }
     finally { setBusy(false); }
@@ -313,38 +409,39 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar" inert={!!dialog}>
-      <button className="brand" onClick={() => setPage('explore')} aria-label="NatureDex home"><div className="brand-mark"><Leaf size={25} strokeWidth={1.7} /></div><span>Nature<span>Dex</span><small>YOUR WORLD, DISCOVERED.</small></span></button>
+      <button className="brand" data-sfx="select" onClick={() => setPage('explore')} aria-label="NatureDex home"><div className="brand-mark"><Leaf size={25} strokeWidth={1.7} /></div><span>Nature<span>Dex</span><small>YOUR WORLD, DISCOVERED.</small></span></button>
       <div className="sidebar-caption">YOUR FIELD GUIDE</div>
       <nav aria-label="Main navigation">{navigation.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} aria-current={page === item.id ? 'page' : undefined} onClick={() => setPage(item.id)}><item.icon size={19} strokeWidth={1.7} /><span>{item.name}</span>{item.id === 'dex' && <span className="nav-count">{profile?.discovered || 0}</span>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="outdoor-note"><Sprout size={24} /><p>A little less scrolling.<br /><strong>A little more exploring.</strong></p></div>
         {!install.installed && <button className="nav-item" onClick={() => setDialog('install')}><Smartphone size={18} />Install NatureDex</button>}
-        <button className="nav-item settings-link" onClick={() => { setActionError(''); setDialog('settings'); }}><Settings size={18} />Settings & privacy</button>
+        <button className="nav-item settings-link" onClick={() => { setActionError(''); setDialog('settings'); }}><Settings size={18} />Settings</button>
         <div className="sidebar-profile"><div className="avatar">{name.slice(0, 1).toUpperCase() || 'E'}</div><div><strong>{name || 'Explorer'}</strong><span>{profile?.title || 'Backyard beginner'}</span></div><span className="level-pill">Lv. {profile?.level || 1}</span></div>
       </div>
     </aside>
 
     <div className="main-shell" inert={!!dialog}>
       <header className="topbar"><div className="breadcrumb"><span>My field guide</span><ChevronRight size={14} /><strong>{navigation.find(item => item.id === page)?.name}</strong></div>
-        <div className="topbar-actions">{!install.installed && <button className="icon-button install-shortcut" aria-label="Install NatureDex on your phone" onClick={() => setDialog('install')}><Smartphone size={19} /></button>}<button className={`mode-chip ${mode}`} onClick={() => { setActionError(''); setDialog('settings'); }}><span />{mode === 'demo' ? 'Sample mode' : 'Local collection'}</button><button className="top-avatar" onClick={() => setDialog('settings')} aria-label="Open profile settings">{name.slice(0, 1).toUpperCase() || 'E'}</button></div>
+        <div className="topbar-actions">{!install.installed && <button className="icon-button install-shortcut" aria-label="Install NatureDex on your phone" onClick={() => setDialog('install')}><Smartphone size={19} /></button>}<button className={`mode-chip ${mode}`} onClick={() => { setActionError(''); setDialog('settings'); }}><span />{page === 'walk' ? 'Walk photos' : mode === 'demo' ? 'Practice mode' : 'My collection'}</button><button className="top-avatar" onClick={() => setDialog('settings')} aria-label="Open profile settings">{name.slice(0, 1).toUpperCase() || 'E'}</button></div>
       </header>
       <main id="main-content">
-        {loading ? <div className="loading-state"><Loader2 className="spin" size={30} /><h2>Opening your field guide…</h2></div> : pairingRequired ? <div className="empty-state pairing-card"><ShieldCheck size={42} /><h2>Connect your field guide.</h2><p>Open the private phone link from your NatureDex computer, or paste its pairing code below.</p><form onSubmit={event => { event.preventDefault(); connectPhone(); }}><label className="field-label">Pairing code<input type="password" autoComplete="off" value={pairingCode} onChange={event => setPairingCode(event.target.value)} required /></label>{error && <p className="error-box" role="alert">{error}</p>}<button className="primary-button full-width" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <LockKeyhole size={18} />}Connect this phone</button></form></div> : error ? <div className="empty-state"><Leaf size={42} /><h2>Let’s reconnect NatureDex</h2><p>{error}</p><button className="primary-button" onClick={() => setConnectionVersion(value => value + 1)}>Try again</button></div> : data && <>
-          {offline && <div className="offline-banner" role="status"><WifiOff size={20} /><div><strong>Your saved field guide</strong><span>Last synced {savedAt ? new Date(savedAt).toLocaleString() : 'earlier'}. Reconnect to scan or save discoveries.</span></div><button onClick={() => setConnectionVersion(value => value + 1)}>Reconnect</button></div>}
+        {loading ? <div className="loading-state"><Loader2 className="spin" size={30} /><h2>Opening your field guide…</h2></div> : pairingRequired ? <div className="empty-state pairing-card"><ShieldCheck size={42} /><h2>Connect your field guide.</h2><p>Open your NatureDex invitation link, or enter its pairing code below.</p><form onSubmit={event => { event.preventDefault(); connectPhone(); }}><label className="field-label">Pairing code<input type="password" autoComplete="off" value={pairingCode} onChange={event => setPairingCode(event.target.value)} required /></label>{error && <p className="error-box" role="alert">{error}</p>}<button className="primary-button full-width" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <LockKeyhole size={18} />}Connect this phone</button></form></div> : error ? <div className="empty-state"><Leaf size={42} /><h2>Let’s reconnect NatureDex</h2><p>{error}</p><button className="primary-button" onClick={() => setConnectionVersion(value => value + 1)}>Try again</button></div> : data && <>
+          {offline && <div className="offline-banner" role="status"><WifiOff size={20} /><div><strong>Your saved field guide</strong><span>Last synced {savedAt ? new Date(savedAt).toLocaleString() : 'earlier'}. You can capture photos offline. Reconnect to identify them and save matches.</span></div><button onClick={() => setConnectionVersion(value => value + 1)}>Reconnect</button></div>}
           {page === 'explore' && <>
-            <div className="page-intro"><div><p className="eyebrow greeting"><Sun size={15} />Good {hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}, {name.toLowerCase() || 'explorer'}</p><h1>Wonder is all around you.</h1><p>A familiar path. A new discovery. Where will curiosity take you today?</p></div><span className="date-label">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</span></div>
-            <section className="hero"><div className="hero-copy"><div className="hero-tag"><span /><span>THE OUTSIDE IS CALLING</span></div><h2>Your next discovery<br />is just a walk away.</h2><p>Meet the wild neighbours you never knew you had.<br className="desktop-break" /> Every leaf, wing, and little wonder has a story.</p><button className="primary-button" onClick={startScan}><Camera size={18} />Make a discovery<ArrowUpRight size={17} /></button><div className="hero-footnote"><ShieldCheck size={13} />Private by default. Saved locally.</div></div><div className="hero-art"><img src="/field-scene.svg" alt="Illustrated woodland trail with leaves, birds, and a butterfly" /><div className="floating-label"><span><Bug size={18} /></span><div><small>THERE’S A WORLD TO MEET</small><strong>Look a little closer.</strong></div></div></div></section>
-            <section className="stats-row" aria-label="Your exploration progress"><div className="stat-card"><div className="stat-icon green"><Leaf size={22} /></div><div><strong>{profile?.discovered}<span> / {data.collection.length}</span></strong><p>Species discovered</p></div><div className="stat-decoration"><Sprout size={32} strokeWidth={1} /></div></div><div className="stat-card"><div className="stat-icon ochre"><Sparkles size={22} /></div><div><strong>{profile?.xp.toLocaleString()}<span> XP</span></strong><p>Curiosity, rewarded</p></div><span className="level-small">LEVEL {profile?.level}</span></div><div className="stat-card"><div className="stat-icon terracotta"><Flame size={22} /></div><div><strong>{profile?.streak}<span> {profile?.streak === 1 ? 'day' : 'days'}</span></strong><p>Out exploring streak</p></div><span className="streak-dots">{Array.from({ length: 5 }, (_, i) => <i key={i} className={i < (profile?.streak || 0) ? 'lit' : ''} />)}</span></div></section>
-            <div className="home-columns"><section><div className="section-heading"><div><span className="eyebrow">A REASON TO STEP OUT</span><h2>Today’s expedition</h2></div><button className="text-button" onClick={() => setPage('expeditions')}>View all<ArrowRight size={14} /></button></div><ExpeditionCard expedition={data.expeditions[0]} onClick={() => openExpedition(data.expeditions[0])} /></section>
-              <section><div className="section-heading"><div><span className="eyebrow">LITTLE MOMENTS, COLLECTED</span><h2>Recent discoveries</h2></div><button className="text-button" onClick={() => setPage('dex')}>Open Dex<ArrowRight size={14} /></button></div>{recent.length ? <div className="recent-grid">{recent.map(species => <SpeciesCard key={species.id} species={species} index={data.collection.findIndex(s => s.id === species.id)} onClick={() => openSpecies(species)} />)}</div> : <div className="empty-collection"><Sprout size={34} /><h3>Your story starts with one discovery.</h3><p>A leaf outside your window is a good place to begin.</p><button className="text-button" onClick={startScan}>Find your first species<ArrowRight size={15} /></button></div>}</section>
+            {!!queued.length && <div className="offline-banner" role="status"><BookOpen size={20} /><div><strong>{queued.length} saved photo{queued.length === 1 ? '' : 's'} on this device</strong><span>{queued.some(item => item.reviewRequired || item.scan?.uncertain) ? 'Your saved photos are ready for a closer look.' : 'Your photos are waiting to be identified.'}</span></div>{queued.some(item => item.reviewRequired || item.scan?.uncertain) && <button disabled={busy || offline} onClick={() => reviewSavedPhoto()}>Review saved photos</button>}<button disabled={busy || offline} onClick={syncSavedPhotos}>{busy ? 'Syncing…' : 'Sync saved photos'}</button></div>}
+            <div className="page-intro"><div><p className="eyebrow greeting"><Sun size={15} />Good {hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}, {name.toLowerCase() || 'explorer'}</p><h1>Adventure starts outside.</h1><p>A short walk. A new discovery. A story to keep.</p></div><span className="date-label">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</span></div>
+            <section className="hero"><div className="hero-copy"><div className="hero-tag"><span /><span>THE OUTSIDE IS CALLING</span></div><h2>Find your next<br />little wonder.</h2><p>Take a photo, meet a species, and grow your field guide.</p><button className="primary-button" data-sfx="select" onClick={startScan}><Camera size={18} />Make a discovery<ArrowUpRight size={17} /></button><div className="hero-footnote"><ShieldCheck size={13} />Take a moment. Look a little closer.</div></div><div className="hero-art"><img src="/pixel-field-scene.svg" alt="Pixel woodland trail with trees, flowers, birds, and a butterfly" /><div className="floating-label"><span><Bug size={18} /></span><div><small>THERE’S A WORLD TO MEET</small><strong>Look a little closer.</strong></div></div></div></section>
+            <section className="stats-row" aria-label="Your exploration progress"><div className="stat-card"><div className="stat-icon green"><Leaf size={22} /></div><div><strong>{profile?.discovered}<span> / {data.collection.length}</span></strong><p>Discoveries</p></div><div className="stat-decoration"><Sprout size={32} strokeWidth={1} /></div></div><div className="stat-card"><div className="stat-icon ochre"><Sparkles size={22} /></div><div><strong>{profile?.xp.toLocaleString()}<span> XP</span></strong><p>Explorer points</p></div><span className="level-small">LEVEL {profile?.level}</span></div><div className="stat-card"><div className="stat-icon terracotta"><Flame size={22} /></div><div><strong>{profile?.streak}<span> {profile?.streak === 1 ? 'day' : 'days'}</span></strong><p>Day streak</p></div><span className="streak-dots">{Array.from({ length: 5 }, (_, i) => <i key={i} className={i < (profile?.streak || 0) ? 'lit' : ''} />)}</span></div></section>
+            <div className="adventure-actions"><button onClick={() => setPage('walk')}><Footprints size={25} /><div><strong>{activeWalk ? 'Continue your walk' : 'Take a walk'}</strong><span>Capture now. Review later.</span></div><ChevronRight size={18} /></button><button onClick={() => setPage('map')}><MapPin size={25} /><div><strong>Explore your map</strong><span>Places worth remembering.</span></div><ChevronRight size={18} /></button></div><div className="home-columns"><section><div className="section-heading"><div><span className="eyebrow">A REASON TO STEP OUT</span><h2>Today’s expedition</h2></div><button className="text-button" onClick={() => setPage('expeditions')}>View all<ArrowRight size={14} /></button></div><ExpeditionCard expedition={data.expeditions[0]} onClick={() => openExpedition(data.expeditions[0])} /></section>
+              <section><div className="section-heading"><div><span className="eyebrow">LITTLE MOMENTS, COLLECTED</span><h2>Recent discoveries</h2></div><button className="text-button" onClick={() => setPage('dex')}>Open Dex<ArrowRight size={14} /></button></div>{recent.length ? <div className="recent-grid">{recent.map(species => <SpeciesCard key={species.id} species={species} index={data.collection.findIndex(s => s.id === species.id)} onClick={() => openSpecies(species)} />)}</div> : <div className="empty-collection"><Sprout size={34} /><h3>Your story starts with one discovery.</h3><p>A leaf outside your window is a good place to begin.</p><button className="text-button" data-sfx="select" onClick={startScan}>Find your first species<ArrowRight size={15} /></button></div>}</section>
             </div>
             <div className="field-note"><div className="field-note-icon"><Info size={19} /></div><p><strong>A note from the field</strong> Observe gently. Leave every leaf, nest, and creature just as you found it.</p><span>TAKE ONLY CURIOSITY</span></div>
           </>}
 
           {page === 'dex' && <>
-            <div className="page-intro"><div><p className="eyebrow">A COLLECTION OF LITTLE WONDERS</p><h1>My NatureDex</h1><p>Every discovery is a new way to see the world.</p></div><button className="primary-button" onClick={startScan}><Camera size={17} />New discovery</button></div>
-            <div className="collection-summary"><div><strong>{profile?.discovered}<span> / {data.collection.length}</span></strong><p>species in your field guide</p></div><div className="collection-progress"><div><span>Your world, a little more discovered</span><span>{Math.round((profile?.discovered || 0)/data.collection.length*100)}%</span></div><div className="progress-track"><span style={{ width: `${(profile?.discovered || 0)/data.collection.length*100}%` }} /></div></div><Leaf size={34} strokeWidth={1.3} /></div>
+            <div className="page-intro"><div><p className="eyebrow">A COLLECTION OF LITTLE WONDERS</p><h1>My NatureDex</h1><p>Every discovery is a new way to see the world.</p></div><button className="primary-button" data-sfx="select" onClick={startScan}><Camera size={17} />New discovery</button></div>
+            <div className="collection-summary"><div><strong>{profile?.discovered}<span> / {data.collection.length}</span></strong><p>species in your field guide</p></div><div className="collection-progress"><div><span>Collection progress</span><span>{Math.round((profile?.discovered || 0)/data.collection.length*100)}%</span></div><div className="progress-track"><span style={{ width: `${(profile?.discovered || 0)/data.collection.length*100}%` }} /></div></div><Leaf size={34} strokeWidth={1.3} /></div>
             <div className="collection-controls"><div className="category-tabs" role="group" aria-label="Species categories">{categories.map(cat => { const Icon = categoryIcons[cat]; return <button key={cat} className={category === cat ? 'active' : ''} onClick={() => setCategory(cat)}>{Icon && <Icon size={14} />}{cat}</button>; })}</div><div className="collection-search-row"><label className="search-input"><Search size={17} /><input aria-label="Search species" placeholder="Search your discoveries…" value={query} onChange={event => setQuery(event.target.value)} /></label><select aria-label="Filter collection status" value={collectionFilter} onChange={event => setCollectionFilter(event.target.value)}><option value="all">All discoveries</option><option value="collected">Collected</option><option value="locked">Undiscovered</option></select></div></div>
-            <p className="results-label">{filtered.length} {filtered.length === 1 ? 'species' : 'species'}<span>{mode === 'demo' ? 'Sample field guide' : 'Your personal field guide'}</span></p>
+            <p className="results-label">{filtered.length} {filtered.length === 1 ? 'species' : 'species'}<span>{mode === 'demo' ? 'Practice field guide' : 'Your personal field guide'}</span></p>
             <div className="dex-grid">{filtered.map(species => <SpeciesCard key={species.id} species={species} index={data.collection.findIndex(s => s.id === species.id)} onClick={() => openSpecies(species)} />)}</div>
             {!filtered.length && <div className="empty-state"><Search size={30} /><h2>No discoveries here yet</h2><p>Try another search or explore a different category.</p><button className="text-button" onClick={() => { setQuery(''); setCategory('All species'); setCollectionFilter('all'); }}>Clear filters</button></div>}
           </>}
@@ -359,8 +456,8 @@ export default function App() {
           {page === 'journal' && <>
             <div className="page-intro"><div><p className="eyebrow">THE PLACES CURIOSITY TAKES YOU</p><h1>Field journal</h1><p>A record of the little things you stopped to notice.</p></div><button className="secondary-button" onClick={exportJournal} disabled={busy}><Download size={16} />Export journal</button></div>
             {actionError && <p className="error-box" role="alert">{actionError}</p>}
-            <div className="journal-list">{data.observations.map((o, i) => { const showDate = i === 0 || readableDate(o.found_at) !== readableDate(data.observations[i-1].found_at); return <div key={o.id}>{showDate && <h2 className="journal-date"><span />{readableDate(o.found_at)}</h2>}<button className="journal-entry" onClick={() => openSpecies(data.collection.find(s => s.id === o.species_id)!)}><img src={o.image} alt="" /><div><span className="eyebrow">{o.category}</span><h3>{o.name}</h3><p>{o.note || 'A moment of curiosity, saved.'}</p><div className="journal-meta"><span><Clock3 size={12} />{new Date(o.found_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>{o.area && <span><MapPin size={12} />{o.area}</span>}{mode === 'demo' && <span>Sample discovery</span>}</div></div><span className="xp-label">+{o.xp} XP</span><ArrowUpRight size={18} /></button></div>; })}</div>
-            {!data.observations.length && <div className="empty-state"><NotebookPen size={36} /><h2>A fresh page awaits.</h2><p>Make a discovery to begin your field journal.</p><button className="primary-button" onClick={startScan}><Camera size={17} />Make a discovery</button></div>}
+            <div className="journal-list">{data.observations.map((o, i) => { const showDate = i === 0 || readableDate(o.found_at) !== readableDate(data.observations[i-1].found_at); return <div key={o.id}>{showDate && <h2 className="journal-date"><span />{readableDate(o.found_at)}</h2>}<button className="journal-entry" onClick={() => openSpecies(data.collection.find(s => s.id === o.species_id)!)}><img src={specimenArtwork(o.image)} alt="" /><div><span className="eyebrow">{o.category}</span><h3>{o.name}</h3><p>{o.note || 'A moment of curiosity, saved.'}</p><div className="journal-meta"><span><Clock3 size={12} />{new Date(o.found_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>{o.area && <span><MapPin size={12} />{o.area}</span>}{mode === 'demo' && <span>Practice discovery</span>}</div></div><span className="xp-label">+{o.xp} XP</span><ArrowUpRight size={18} /></button></div>; })}</div>
+            {!data.observations.length && <div className="empty-state"><NotebookPen size={36} /><h2>A fresh page awaits.</h2><p>Make a discovery to begin your field journal.</p><button className="primary-button" data-sfx="select" onClick={startScan}><Camera size={17} />Make a discovery</button></div>}
           </>}
 
           {page === 'achievements' && <>
@@ -368,57 +465,61 @@ export default function App() {
             <section className="level-card"><div className="level-emblem"><Compass size={42} strokeWidth={1.3} /></div><div><span className="eyebrow">LEVEL {profile?.level}</span><h2>{profile?.title}</h2><p>Keep noticing. There’s always another little wonder.</p></div><div className="level-progress"><div><span>{profile?.xp.toLocaleString()} XP</span><span>{profile?.next_level ? `${profile.next_level.toLocaleString()} XP` : 'Highest level'}</span></div><div className="progress-track"><span style={{ width: `${levelProgress}%` }} /></div><p>{profile?.next_level ? `${profile.next_level - profile.xp} XP to your next level` : 'Keep exploring for the joy of discovery.'}</p></div></section>
             <div className="badge-grid">{data.achievements.map(a => <Badge key={a.id} achievement={a} />)}</div>
           </>}
-          <footer className="page-footer"><span><Leaf size={13} />Made for the world outside.</span><span>{mode === 'demo' ? 'Sample discoveries · Try the flow, then start your own collection' : 'Local storage · No account needed'}</span></footer>
+          {page === 'walk' && <Walk items={queued} changed={setQueued} review={item => reviewSavedPhoto(item)} offline={offline} active={activeWalk} setActive={setActiveWalk} />}
+          {page === 'map' && <Suspense fallback={<div className="loading-state">Opening your map…</div>}><DiscoveryMap observations={data.observations} mode={mode} offline={offline} initialId={mapObservation} updated={refresh} openSpecies={id => { const species = data.collection.find(s => s.id === id); if (species) openSpecies(species); }} /></Suspense>}
+          <footer className="page-footer"><span><Leaf size={13} />Made for the world outside.</span><span>{page === 'walk' ? 'Capture now. Review when you are ready.' : mode === 'demo' ? 'Practice collection · Your real discoveries stay separate' : 'Your discoveries. Your story.'}</span></footer>
         </>}
       </main>
     </div>
-    <nav className="mobile-nav" aria-label="Mobile navigation" inert={!!dialog}>{navigation.map(item => <button key={item.id} onClick={() => setPage(item.id)} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><item.icon size={20} /><span>{item.id === 'dex' ? 'My Dex' : item.id === 'journal' ? 'Journal' : item.name}</span></button>)}</nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation" inert={!!dialog}>{navigation.filter(item => ['explore','dex','walk','map'].includes(item.id)).map(item => <button key={item.id} onClick={() => { setPage(item.id); setMoreOpen(false); }} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined}><item.icon size={20} /><span>{item.id === 'dex' ? 'My Dex' : item.id === 'walk' ? 'Walk' : item.id === 'map' ? 'Map' : item.name}</span></button>)}<button aria-label="More pages" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}><Menu size={20} /><span>More</span></button></nav>
+    {moreOpen && !dialog && <div className="mobile-more" onKeyDown={event => { if (event.key === 'Escape') setMoreOpen(false); }}><button className="icon-button" aria-label="Close menu" onClick={() => setMoreOpen(false)}><X size={18} /></button>{navigation.filter(item => ['expeditions','journal','achievements'].includes(item.id)).map(item => <button key={item.id} onClick={() => { setPage(item.id); setMoreOpen(false); }}><item.icon size={20} />{item.name}</button>)}<button onClick={() => { setDialog('settings'); setMoreOpen(false); }}><Settings size={20} />Settings</button></div>}
 
     {dialog === 'scan' && <Dialog title={scan ? 'A little wonder, found.' : 'What caught your eye?'} close={closeDialog} wide={!!scan}>
-      {busy && !scan ? <div className="scanning-state">{preview && <img src={preview} alt="Photo being identified" />}<Loader2 size={34} className="spin" /><h3>{preview ? 'Looking a little closer…' : 'Opening a sample discovery…'}</h3><p>{preview ? 'The model runs on your computer. The first scan can take a while on CPU.' : 'This sample lets you try collecting without a model.'}</p></div> : scan && candidate ? <div className="scan-result"><div className="result-photo"><img src={scan.photo || candidate.species.image} alt={candidate.species.name} /><span className="photo-label">{scan.mode === 'demo' ? 'SAMPLE DISCOVERY' : 'YOUR FIELD PHOTO'}</span></div><div className="result-details"><p className="eyebrow"><Sparkles size={13} />{tentative ? 'POSSIBLE MATCH' : scan.mode === 'demo' ? 'FROM THE SAMPLE FIELD GUIDE' : 'VISUAL MATCH'}</p><h3>{candidate.species.name}</h3><p className="scientific-name">{candidate.species.scientific}</p><div className="result-tags"><span>{candidate.species.category}</span><span>{candidate.species.rarity}</span>{candidate.score !== null && <span>{Math.round(candidate.score*100)}% model score</span>}</div><p className={`identification-note ${tentative ? 'uncertain' : ''}`}><Info size={16} />{scan.message}</p><p className="model-score-note">{scan.score_note}</p>
-        {scan.candidates.length > 1 && <label className="field-label">Compare possible matches<select value={candidateIndex} onChange={event => { setCandidateIndex(Number(event.target.value)); setConfirmed(false); }}>{scan.candidates.map((c, i) => <option value={i} key={c.species.id}>{c.species.name} — {Math.round((c.score || 0)*100)}% model score</option>)}</select></label>}
+      {busy && !scan ? <div className="scanning-state">{preview && <img src={preview} alt="Photo being identified" />}<Loader2 size={34} className="spin" /><h3>{preview ? 'Looking a little closer…' : 'Opening a practice discovery…'}</h3><p>{preview ? 'Finding the closest match. This may take a moment.' : 'Get to know your next little wonder.'}</p></div> : scan && candidate ? <div className="scan-result"><div className="result-photo"><img src={specimenArtwork((queuedReview && preview) || scan.photo || candidate.species.image)} alt={candidate.species.name} /><span className="photo-label">{scan.mode === 'demo' ? 'PRACTICE DISCOVERY' : 'YOUR FIELD PHOTO'}</span></div><div className="result-details"><p className="eyebrow"><Sparkles size={13} />{tentative ? 'POSSIBLE MATCH' : scan.mode === 'demo' ? 'PRACTICE DISCOVERY' : 'VISUAL MATCH'}</p><h3>{candidate.species.name}</h3><p className="scientific-name">{candidate.species.scientific}</p><div className="result-tags"><span>{candidate.species.category}</span><span>{candidate.species.rarity}</span></div><p className={`identification-note ${tentative ? 'uncertain' : ''}`}><Info size={16} />{scan.mode === 'demo' ? 'A practice discovery. Your real collection stays separate.' : tentative ? 'A possible match. Compare the markings, shape, and colour before saving.' : 'Compare the visible features before adding this discovery.'}</p>
+        <Matches scan={scan} selected={candidateIndex} choose={index => { setCandidateIndex(index); setConfirmed(false); }} />{scan.mode === 'field' && <button className="text-button full-width" disabled={busy} onClick={rejectMatch}>None of these — keep photo for later</button>}
         <div className="fact-box"><Leaf size={17} /><div><strong>A little thing to know</strong><p>{candidate.species.fact}</p></div></div>
         <label className="field-label">Field note <span>(optional)</span><textarea value={note} onChange={event => setNote(event.target.value)} maxLength={400} placeholder="What did you notice?" rows={2} /></label>
         {saveArea && <label className="field-label">Approximate area <span>(optional, no GPS saved)</span><input maxLength={100} value={area} onChange={event => setArea(event.target.value)} placeholder="e.g. neighbourhood park" /></label>}
         {tentative && <label className="confirm-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>I’ve reviewed the features and want to save a tentative identification.</span></label>}
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
-        <button className="primary-button full-width" disabled={busy || (!!tentative && !confirmed)} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Add to {scan.mode === 'demo' ? 'sample NatureDex' : 'my NatureDex'}<ArrowRight size={17} /></button><button className="text-button full-width" disabled={busy} onClick={() => { setScan(null); setPreview(null); setActionError(''); }}>Try another discovery</button>
-      </div></div> : scan ? <div className="scan-result"><div className="result-photo">{preview && <img src={preview} alt="Captured specimen" />}<span className="photo-label">OFFLINE CAPTURE</span></div><div className="result-details"><p className="eyebrow"><Sparkles size={13} />SAVED TO QUEUE</p><h3>Offline Discovery</h3><p className="scientific-name">Awaiting reconnection</p><p className="identification-note"><Info size={16} />{scan.message}</p>
+        <button className="primary-button full-width" disabled={busy || (!!tentative && !confirmed)} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Add to {scan.mode === 'demo' ? 'practice NatureDex' : 'my NatureDex'}<ArrowRight size={17} /></button><button className="text-button full-width" data-sfx="back" disabled={busy} onClick={startScan}>Try another discovery</button>
+      </div></div> : scan ? <div className="scan-result"><div className="result-photo">{preview && <img src={preview} alt="Captured specimen" />}<span className="photo-label">OFFLINE CAPTURE</span></div><div className="result-details"><p className="eyebrow"><Sparkles size={13} />IDENTIFY LATER</p><h3>A discovery in waiting</h3><p className="scientific-name">Ready when you reconnect</p><p className="identification-note"><Info size={16} />{scan.message}</p>
         <label className="field-label">Field note <span>(optional)</span><textarea value={note} onChange={event => setNote(event.target.value)} maxLength={400} placeholder="What did you notice?" rows={2} /></label>
         {saveArea && <label className="field-label">Approximate area <span>(optional, no GPS saved)</span><input maxLength={100} value={area} onChange={event => setArea(event.target.value)} placeholder="e.g. neighbourhood park" /></label>}
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
-        <button className="primary-button full-width" disabled={busy} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Queue offline discovery<ArrowRight size={17} /></button><button className="text-button full-width" disabled={busy} onClick={() => { setScan(null); setPreview(null); setActionError(''); }}>Take another photo</button>
+        <button className="primary-button full-width" disabled={busy} onClick={saveDiscovery}>{busy ? <Loader2 className="spin" size={17} /> : <BookOpen size={17} />}Save photo for later<ArrowRight size={17} /></button><button className="text-button full-width" data-sfx="back" disabled={busy} onClick={startScan}>Take another photo</button>
       </div></div> : <div className="capture-content"><p>Photograph a leaf, a wing, or something wonderfully unfamiliar.</p><div className="capture-options" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) identify(file); }}><div className="capture-emblem"><Camera size={30} strokeWidth={1.4} /></div><h3>Something caught your eye?</h3><p>JPEG, PNG, WebP · up to 12 MB</p><button className="primary-button full-width" onClick={() => cameraRef.current?.click()}><Camera size={18} />Take a photo</button><button className="secondary-button full-width" onClick={() => fileRef.current?.click()}><ImagePlus size={18} />Choose from gallery</button></div><input ref={cameraRef} className="sr-only" tabIndex={-1} type="file" accept="image/*" capture="environment" onChange={event => { const file = event.target.files?.[0]; if (file) identify(file); event.target.value = ''; }} /><input ref={fileRef} className="sr-only" tabIndex={-1} type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) identify(file); event.target.value = ''; }} />
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
-        <div className="recognition-status"><ShieldCheck size={17} /><p>{health?.model.enabled ? 'Local BioCLIP recognition is enabled. Photos are processed on your computer.' : 'Local AI needs one-time model setup. You can try the complete flow with a sample below.'}</p></div>
-        <div className="sample-heading"><h3>Just looking around?</h3><span>TRY A SAMPLE · NO AI SCAN</span></div><div className="sample-grid">{(data?.collection || []).filter(s => !s.id.startsWith('taxon-')).map(species => <button key={species.id} onClick={() => sample(species)}><img src={species.image} alt="" /><span>{species.name}</span><ArrowUpRight size={14} /></button>)}</div>
+        {health && !health.model.enabled && <div className="recognition-status" role="status"><Info size={17} /><p>Photo identification is unavailable right now. You can still try a practice discovery below.</p></div>}
+        <details className="practice-browser"><summary><Sprout size={20} /><div><strong>Try a practice discovery</strong><span>Explore a ready-made collection</span></div><ChevronRight size={18} /></summary><div className="sample-grid">{(data?.collection || []).filter(s => !s.id.startsWith('taxon-')).map(species => <button key={species.id} data-sfx="select" onClick={() => sample(species)}><img src={specimenArtwork(species.image)} alt="" /><span>{species.name}</span><ArrowUpRight size={14} /></button>)}</div></details>
         <p className="capture-tip"><Leaf size={13} />Photograph from a respectful distance. Leave nature where it belongs.</p>
       </div>}
     </Dialog>}
 
     {dialog === 'species' && selectedSpecies && <Dialog title={selectedSpecies.sightings ? 'Your field guide' : 'An undiscovered neighbour'} close={closeDialog} wide={selectedSpecies.sightings > 0}>
-      {selectedSpecies.sightings ? <div className="species-detail"><div className="detail-image"><img src={selectedSpecies.image} alt={selectedSpecies.name} /><span>#{String((data?.collection.findIndex(s => s.id === selectedSpecies.id) || 0)+1).padStart(3, '0')}</span></div><div className="detail-content"><p className="eyebrow">{selectedSpecies.category} · {selectedSpecies.rarity}</p><h3>{selectedSpecies.name}</h3><p className="scientific-name">{selectedSpecies.scientific}</p><div className="detail-stats"><div><span>FIRST DISCOVERED</span><strong>{readableDate(selectedSpecies.first_found, true)}</strong></div><div><span>SIGHTINGS</span><strong>{selectedSpecies.sightings}</strong></div></div><div className="fact-box"><Sparkles size={18} /><div><strong>Did you know?</strong><p>{selectedSpecies.fact}</p></div></div><p className="habitat"><MapPin size={16} />{selectedSpecies.habitat}</p><h4 className="eyebrow taxonomy-title">A PLACE IN THE TREE OF LIFE</h4><div className="taxonomy-tree">{Object.entries(selectedSpecies.taxonomy).filter(([, value]) => value).map(([key, value]) => <div key={key}><span>{key}</span><strong>{value}</strong></div>)}</div><p className="detail-note">{mode === 'demo' ? 'This entry comes from the sample collection.' : 'Your identification is a field observation, open to revision.'} Collection rarity is a game label, not a conservation status.</p></div></div> : <div className="locked-detail"><div className="locked-emblem"><LockKeyhole size={33} /></div><p className="eyebrow">{selectedSpecies.category}</p><h3>Some wonders are still waiting.</h3><p>Look around {selectedSpecies.category === 'Fungi' ? 'fallen branches and dead wood' : selectedSpecies.category === 'Birds' ? 'the trees and open spaces near you' : selectedSpecies.category === 'Insects' ? 'flowers and sunny garden edges' : 'your local green spaces'}. Your next discovery could be closer than you think.</p><button className="primary-button" onClick={startScan}><Camera size={17} />Make a discovery</button></div>}
+      {selectedSpecies.sightings ? <div className="species-detail"><div className="detail-image"><img src={specimenArtwork(selectedSpecies.image)} alt={selectedSpecies.name} /><span>#{String((data?.collection.findIndex(s => s.id === selectedSpecies.id) || 0)+1).padStart(3, '0')}</span></div><div className="detail-content"><p className="eyebrow">{selectedSpecies.category} · {selectedSpecies.rarity}</p><h3>{selectedSpecies.name}</h3><p className="scientific-name">{selectedSpecies.scientific}</p><div className="detail-stats"><div><span>FIRST DISCOVERED</span><strong>{readableDate(selectedSpecies.first_found, true)}</strong></div><div><span>SIGHTINGS</span><strong>{selectedSpecies.sightings}</strong></div></div><div className="fact-box"><Sparkles size={18} /><div><strong>Did you know?</strong><p>{selectedSpecies.fact}</p></div></div><p className="habitat"><MapPin size={16} />{selectedSpecies.habitat}</p><h4 className="eyebrow taxonomy-title">A PLACE IN THE TREE OF LIFE</h4><div className="taxonomy-tree">{Object.entries(selectedSpecies.taxonomy).filter(([, value]) => value).map(([key, value]) => <div key={key}><span>{key}</span><strong>{value}</strong></div>)}</div><p className="detail-note">{mode === 'demo' ? 'This entry belongs to your practice collection.' : 'You can compare this sighting with future discoveries.'} Collection rarity is a game label, not a conservation status.</p></div></div> : <div className="locked-detail"><div className="locked-emblem"><LockKeyhole size={33} /></div><p className="eyebrow">{selectedSpecies.category}</p><h3>Some wonders are still waiting.</h3><p>Look around {selectedSpecies.category === 'Fungi' ? 'fallen branches and dead wood' : selectedSpecies.category === 'Birds' ? 'the trees and open spaces near you' : selectedSpecies.category === 'Insects' ? 'flowers and sunny garden edges' : 'your local green spaces'}. Your next discovery could be closer than you think.</p><button className="primary-button" data-sfx="select" onClick={startScan}><Camera size={17} />Make a discovery</button></div>}
+      {selectedSpecies.sightings > 0 && <SightingHistory key={selectedSpecies.id} observations={(data?.observations || []).filter(o => o.species_id === selectedSpecies.id)} mode={mode} offline={offline} updated={refresh} onMap={openMap} />}
     </Dialog>}
 
     {dialog === 'expedition' && expedition && <Dialog title="Your next little adventure" close={closeDialog}>
-      <div className={`quest-detail ${expedition.theme}`}><div className="quest-scene"><img src="/field-scene.svg" alt="Woodland trail illustration" /></div><p className="eyebrow">{expedition.duration} MIN OUTDOORS · {expedition.xp} XP</p><h3>{expedition.title}</h3><p>{expedition.subtitle}</p><div className="quest-objectives">{expedition.goals.map((goal, i) => <div key={i} className={goal.done ? 'done' : ''}><span>{goal.done ? <Check size={15} /> : i+1}</span><p>{goal.label}</p>{goal.done && <CheckCircle2 size={17} />}</div>)}</div><div className="quest-hint"><Leaf size={16} /><p>{mode === 'demo' ? 'Sample mode: start, then save matching sample discoveries to try the expedition.' : 'Save a discovery after starting to tick off its objective. Keep wildlife at a comfortable distance.'}</p></div>
+      <div className={`quest-detail ${expedition.theme}`}><div className="quest-scene"><img src="/pixel-field-scene.svg" alt="Woodland trail illustration" /></div><p className="eyebrow">{expedition.duration} MIN OUTDOORS · {expedition.xp} XP</p><h3>{expedition.title}</h3><p>{expedition.subtitle}</p><div className="quest-objectives">{expedition.goals.map((goal, i) => <div key={i} className={goal.done ? 'done' : ''}><span>{goal.done ? <Check size={15} /> : i+1}</span><p>{goal.label}</p>{goal.done && <CheckCircle2 size={17} />}</div>)}</div><div className="quest-hint"><Leaf size={16} /><p>{mode === 'demo' ? 'Practice expedition: start, then add matching practice discoveries to complete the goals.' : 'Save a discovery after starting to tick off its objective. Keep wildlife at a comfortable distance.'}</p></div>
         {actionError && <p className="error-box" role="alert">{actionError}</p>}
         {offline && <p className="error-box">Reconnect to start expeditions, save discoveries, or claim rewards.</p>}
         {expedition.claimed ? <div className="completed-expedition"><Trophy size={22} />Well explored! Your reward is in your XP.</div> : expedition.active ? expedition.completed === expedition.goals.length ? <button className="primary-button full-width" disabled={busy || offline} onClick={() => expeditionAction(expedition, true)}>{busy ? <Loader2 className="spin" size={18} /> : <Trophy size={18} />}Claim {expedition.xp} XP</button> : <button className="primary-button full-width" disabled={offline} onClick={startScan}><Camera size={18} />Find a discovery<span>{expedition.completed}/{expedition.goals.length}</span></button> : <button className="primary-button full-width" disabled={busy || offline} onClick={() => expeditionAction(expedition)}>{busy ? <Loader2 className="spin" size={18} /> : <Compass size={18} />}Start expedition<ArrowRight size={17} /></button>}
       </div>
     </Dialog>}
 
-    {dialog === 'settings' && <Dialog title="Make yourself at home." close={closeDialog}>
+    {dialog === 'settings' && <Dialog title="Your explorer profile" close={closeDialog}>
       <div className="settings-content"><label className="field-label">What should we call you?<input value={name} maxLength={30} onChange={event => setName(event.target.value)} placeholder="Explorer" /></label>
         <h3>NatureDex on your phone</h3><button className="secondary-button full-width" onClick={() => setDialog('install')}><Smartphone size={17} />{install.installed ? 'Your installed app' : 'Add to your home screen'}</button>
-        <h3>Your field guide</h3><p>Samples and your real discoveries have separate collections, XP, and expeditions.</p><div className="mode-options"><button className={mode === 'demo' ? 'selected' : ''} onClick={() => { setMode('demo'); closeDialog(); }}><ImagePlus size={22} /><div><strong>Sample collection</strong><span>Explore the experience with a few discoveries</span></div>{mode === 'demo' && <CheckCircle2 size={18} />}</button><button className={mode === 'field' ? 'selected' : ''} onClick={() => { setMode('field'); closeDialog(); }}><Leaf size={22} /><div><strong>My real collection</strong><span>A fresh start for your outdoor adventures</span></div>{mode === 'field' && <CheckCircle2 size={18} />}</button></div>
-        <h3>Small footprint. Your privacy.</h3><div className="privacy-card"><ShieldCheck size={22} /><p>Discoveries are stored on your computer, with a saved guide on this device for offline browsing. Photo GPS metadata is removed before storage. The phone link sends photos and notes through Cloudflare to your computer; your private link grants access to your collection.</p></div><label className="settings-toggle"><div><strong>Save an approximate area</strong><span>Add a place name yourself. Never exact GPS.</span></div><input type="checkbox" role="switch" checked={saveArea} onChange={event => setSaveArea(event.target.checked)} /></label>
-        <h3>Local recognition</h3><div className="model-info"><div><span className={`status-dot ${health?.model.enabled ? 'ready' : ''}`} /><strong>BioCLIP 2</strong><span>{health?.model.enabled ? health.model.loaded ? 'Loaded' : 'Enabled · loads on first scan' : 'Setup needed'}</span></div><p>{health?.model.enabled ? `Runs on ${health.model.device.toUpperCase()}. Identification does not need an internet connection after the model is cached.` : 'Install the optional AI dependencies and cache the model once. Setup commands are in the project README.'}</p><code>python scripts/download_model.py</code></div>
-        {actionError && <p className="error-box" role="alert">{actionError}</p>}<button className="secondary-button full-width" onClick={exportJournal} disabled={busy}><Download size={16} />Export {mode === 'demo' ? 'sample' : 'my'} field journal</button><p className="settings-note">Bundled illustrations are decorative, not identification references. Identification scores are estimates; compare visible features before saving.</p>
+        <h3>Your field guide</h3><p>Choose your own adventures or try a practice collection. Progress stays separate.</p><div className="mode-options"><button className={mode === 'demo' ? 'selected' : ''} onClick={() => { setMode('demo'); closeDialog(); }}><ImagePlus size={22} /><div><strong>Practice collection</strong><span>Explore the experience with a few discoveries</span></div>{mode === 'demo' && <CheckCircle2 size={18} />}</button><button className={mode === 'field' ? 'selected' : ''} onClick={() => { setMode('field'); closeDialog(); }}><Leaf size={22} /><div><strong>My collection</strong><span>Keep the species you discover outside</span></div>{mode === 'field' && <CheckCircle2 size={18} />}</button></div>
+        <h3>Your preferences</h3><label className="settings-toggle"><div><strong>Save an approximate area</strong><span>Add a place name yourself. Never exact GPS.</span></div><input type="checkbox" role="switch" checked={saveArea} onChange={event => setSaveArea(event.target.checked)} /></label>
+        <label className="settings-toggle"><div><strong>Retro sound effects</strong><span>8-bit clicks, scan chirps, and discovery jingles.</span></div><input type="checkbox" role="switch" checked={sound} onChange={() => setSound(sfx.toggle())} /></label>
+        {actionError && <p className="error-box" role="alert">{actionError}</p>}<button className="secondary-button full-width" onClick={exportJournal} disabled={busy}><Download size={16} />Export {mode === 'demo' ? 'practice' : 'my'} field journal</button><details className="privacy-details"><summary><ShieldCheck size={16} />About your photos &amp; privacy</summary><p>Photo GPS metadata is removed. Place names are optional. Your saved guide is available for browsing without a connection.</p><p>When you use a phone link, photos and notes pass through Cloudflare to the computer hosting NatureDex. Keep your invitation link private. Identification needs that computer to be awake and connected.</p></details>
       </div>
     </Dialog>}
     {dialog === 'install' && <Dialog title="Your pocket field guide." close={closeDialog}>
-      <div className="install-content"><img className="app-icon" src="/icons/icon-192.png" alt="NatureDex leaf icon" /><h3>NatureDex, ready for a walk.</h3><p>Open it from your home screen, take a photo, and keep your discoveries close.</p>{install.installed ? <div className="install-success"><CheckCircle2 size={20} />You’re using the installed app.</div> : <><ol><li>Open your private NatureDex link in <strong>Chrome on Android</strong>.</li><li>Tap Chrome’s <strong>⋮ menu</strong>, then <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li><li>Confirm, then look for the leaf icon on your home screen.</li></ol>{install.available && <button className="primary-button full-width" disabled={install.installing} onClick={() => install.install().then(accepted => { if (accepted) notify('NatureDex has been added to your home screen.'); }).catch(() => notify('Use Chrome’s menu to install NatureDex.'))}>{install.installing ? <Loader2 className="spin" size={18} /> : <Download size={18} />}Install NatureDex</button>}</>}<div className="install-note"><WifiOff size={19} /><p>Your synced field guide works offline. Scans and saved discoveries need the computer running NatureDex. Keep it awake and connected during your walk.</p></div></div>
+      <div className="install-content"><img className="app-icon" src="/icons/icon-192.png" alt="NatureDex leaf icon" /><h3>NatureDex, ready for a walk.</h3><p>Open it from your home screen, take a photo, and keep your discoveries close.</p>{install.installed ? <div className="install-success"><CheckCircle2 size={20} />You’re using the installed app.</div> : <><ol><li>Open your private NatureDex link in <strong>Chrome on Android</strong>.</li><li>Tap Chrome’s <strong>⋮ menu</strong>, then <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li><li>Confirm, then look for the leaf icon on your home screen.</li></ol>{install.available && <button className="primary-button full-width" disabled={install.installing} onClick={() => install.install().then(accepted => { if (accepted) notify('NatureDex has been added to your home screen.'); }).catch(() => notify('Use Chrome’s menu to install NatureDex.'))}>{install.installing ? <Loader2 className="spin" size={18} /> : <Download size={18} />}Install NatureDex</button>}</>}<div className="install-note"><WifiOff size={19} /><p>Browse your saved guide without a connection. Reconnect to identify new photos.</p></div></div>
     </Dialog>}
     {toast && <div className="toast" role="status"><CheckCircle2 size={19} /><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={16} /></button></div>}
   </div>;

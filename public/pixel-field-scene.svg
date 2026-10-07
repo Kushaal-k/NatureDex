@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 280" shape-rendering="crispEdges">
+  <defs>
+    <pattern id="grass" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M4 16h4v4H4zm12-8h4v4h-4" fill="#76934b"/></pattern>
+    <g id="pine"><path d="M-4 0h8v80h-8" fill="#526940"/><path d="M-8-52H8v12h8v12h8v12h8V0h-64v-16h8v-12h8v-12h8z" fill="#2e5438"/><path d="M-8-40H0v12h-8v12h-8V0h-8v-16h8v-12h8z" fill="#426744"/></g>
+    <g id="flower"><path d="M0 0h4v16H0m4-8h8v4H4" fill="#2e5438"/><path d="M-4-8H8v4h4v8H8v4H-4V4h-4v-8h4z" fill="#f3eccb"/><path d="M0-4h4v8H0" fill="#c2a457"/></g>
+  </defs>
+  <path fill="#cddca1" d="M0 0h400v280H0z"/>
+  <path fill="#ece9bb" d="M280 24h32v8h8v32h-8v8h-32v-8h-8V32h8z"/>
+  <g fill="#f3eccb"><path d="M28 40h16V28h32v12h16v8h8v8H20v-8h8zm140-12h12v-8h24v8h16v8h8v8h-68V32h8zm150 62h16v-8h28v8h16v8h8v8h-76v-8h8z"/></g>
+  <path d="M0 128h24v-16h40v-12h32v16h24v12h40v-16h32V96h40v16h32v16h32v-12h40v12h40v16h24v136H0z" fill="#9db66a"/>
+  <path d="M0 164h40v-12h36v-12h44v12h56v12h48v-12h56v-12h40v12h44v12h36v116H0z" fill="#7e9c56"/>
+  <path d="M0 204h76v-12h84v8h56v-12h68v12h64v-8h52v88H0z" fill="#9db66a"/>
+  <path d="M0 204h400v76H0z" fill="url(#grass)"/>
+  <path d="M200 200h32v12h-12v12h-16v12h-16v12h-12v16h-8v16H84v-12h20v-12h24v-12h24v-12h24v-12h16v-12h8z" fill="#e5dfac"/>
+  <path d="M84 268h20v-12h24v-12h24v-12h24v-12h16v-12h8v-8h8v12h-8v12h-16v12h-24v12h-24v12h-24v12h-20v8H84z" fill="#c2bd88"/>
+  <use href="#pine" x="36" y="160"/><use href="#pine" x="84" y="144"/>
+  <use href="#pine" x="352" y="160"/><use href="#pine" x="304" y="144"/>
+  <path d="M256 108h12v116h-12" fill="#526940"/>
+  <path d="M240 64h40v8h16v16h8v40h-8v16h-24v8h-32v-8h-24v-16h-8V88h8V72h24z" fill="#2e5438"/>
+  <path d="M240 72h24v8h-16v8h-16v16h-12v24h-4V88h8V80h16z" fill="#426744"/>
+  <path d="M254 132h8v12h-8m8-4h12v8h-12" fill="#76934b"/>
+  <g fill="#2e5438"><path d="M128 72h8v8h8v8h8v-8h8v-8h8v8h-8v8h-8v8h-8v-8h-8v-8h-8z"/><path d="M192 60h8v8h8v8h8v-8h8v-8h8v8h-8v8h-8v8h-8v-8h-8v-8h-8z"/></g>
+  <use href="#flower" x="52" y="248"/><use href="#flower" x="76" y="232"/><use href="#flower" x="236" y="248"/><use href="#flower" x="332" y="256"/>
+  <path d="M274 220h24v4h8v8h-40v-8h8z" fill="#c2a457"/><path d="M280 232h8v12h-8" fill="#f3eccb"/><path d="M274 224h4v4h-4m16-4h4v4h-4" fill="#f3eccb"/>
+  <path d="M112 172h8v8h8v8h-8v8h-8v-8h-8v-8h8m16 0h8v8h8v8h-8v8h-8v-8h-8v-8h8" fill="#c2a457"/><path d="M120 180h8v20h-8" fill="#2e5438"/>
+  <g fill="#2e5438"><path d="M12 264h4v-8h4v8h4v8H12zm356-24h4v-8h4v8h4v8h-12z"/></g>
+</svg>

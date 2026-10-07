@@ -1,5 +1,7 @@
 import io
 import json
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,6 +32,31 @@ def image_bytes():
     buffer = io.BytesIO()
     image.save(buffer, "JPEG", exif=exif)
     return buffer.getvalue()
+
+def test_sighting_notes_and_pins_persist_without_changing_progress(client):
+    before = client.get('/api/dashboard').json()
+    sighting = before['observations'][0]
+    route = f"/api/observations/{sighting['id']}/details"
+    assert client.post(route, json={'mode':'demo', 'note':'Near the old oak', 'area':'Favourite park', 'latitude':22.5, 'longitude':88.3}).status_code == 200
+    storage.initialize()
+    after = client.get('/api/dashboard').json()
+    updated = next(o for o in after['observations'] if o['id'] == sighting['id'])
+    assert (updated['note'], updated['area'], updated['latitude'], updated['longitude']) == ('Near the old oak','Favourite park',22.5,88.3)
+    assert updated['found_at'] == sighting['found_at']
+    assert after['profile'] == before['profile']
+    assert client.get('/api/export?mode=demo').json()['observations'][0]['latitude'] == 22.5
+    assert client.post(route, json={'mode':'demo', 'note':'A second look'}).status_code == 200
+    assert client.get('/api/dashboard').json()['observations'][0]['latitude'] == 22.5
+    assert client.post(route, json={'mode':'demo', 'latitude':None, 'longitude':None}).status_code == 200
+    assert client.get('/api/dashboard').json()['observations'][0]['latitude'] is None
+
+def test_pin_validation_and_collection_isolation(client):
+    sighting = client.get('/api/dashboard').json()['observations'][0]
+    route = f"/api/observations/{sighting['id']}/details"
+    assert client.post(route, json={'mode':'field', 'note':'Wrong collection'}).status_code == 404
+    for invalid in [{'latitude':1}, {'latitude':None,'longitude':1}, {'latitude':86,'longitude':0}, {'latitude':0,'longitude':181}, {'note':'a'*401}]:
+        assert client.post(route,json={'mode':'demo', **invalid}).status_code == 422
+    assert client.get('/api/dashboard').json()['observations'][0]['note'] == sighting['note']
 
 def test_demo_and_real_collections_are_isolated(client):
     demo = client.get("/api/dashboard?mode=demo").json()
@@ -110,3 +137,52 @@ def test_new_model_taxon_is_normalized_without_inventing_facts():
     assert candidate["species"]["id"] == "taxon-testus-example"
     assert candidate["species"]["rarity"] == "Unrated"
     assert candidate["score"] == .8
+
+
+def field_scan(client, monkeypatch, uncertain=False):
+    monkeypatch.setattr(main.recognizer, "predict", lambda image: {
+        "candidates": [{"species": BY_ID["honey-bee"], "score": .2 if uncertain else .95}],
+        "uncertain": uncertain, "message": "Test match", "score_note": "Test"})
+    return client.post("/api/scans", files={"file": ("photo.jpg", image_bytes(), "image/jpeg")}).json()
+
+
+def test_offline_retries_and_concurrent_saves_award_once(client, monkeypatch):
+    scans = [field_scan(client, monkeypatch), field_scan(client, monkeypatch)]
+    captured = (datetime.now().astimezone() - timedelta(days=3)).isoformat()
+    def save(scan):
+        return client.post("/api/observations", json={"scan_id": scan["scan_id"],
+            "offline_id": "one-phone-photo", "captured_at": captured})
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(save, scans))
+    assert all(response.status_code == 200 for response in responses)
+    assert responses[0].json() == responses[1].json()
+    storage.initialize()
+    assert save(scans[0]).json() == responses[0].json()
+    field = client.get("/api/dashboard?mode=field").json()
+    assert len(field["observations"]) == 1
+    assert field["profile"]["xp"] == responses[0].json()["xp"]
+
+
+def test_offline_capture_date_keeps_old_photos_out_of_new_expeditions(client, monkeypatch):
+    client.post("/api/expeditions/pollinator/start", json={"mode": "field"})
+    scan = field_scan(client, monkeypatch)
+    captured = datetime.now().astimezone() - timedelta(days=3)
+    response = client.post("/api/observations", json={"scan_id": scan["scan_id"],
+        "offline_id": "old-photo", "captured_at": captured.isoformat()})
+    assert response.status_code == 200
+    field = client.get("/api/dashboard?mode=field").json()
+    assert datetime.fromisoformat(field["observations"][0]["found_at"]) == captured
+    assert field["profile"]["streak"] == 0
+    assert field["expeditions"][0]["completed"] == 0
+
+
+def test_offline_tentative_match_still_requires_confirmation_and_valid_date(client, monkeypatch):
+    scan = field_scan(client, monkeypatch, uncertain=True)
+    body = {"scan_id": scan["scan_id"], "offline_id": "tentative-photo",
+            "captured_at": datetime.now().astimezone().isoformat()}
+    assert client.post("/api/observations", json=body).status_code == 422
+    assert client.post("/api/observations", json={**body, "confirm_uncertain": True,
+        "captured_at": (datetime.now().astimezone() + timedelta(days=1)).isoformat()}).status_code == 422
+    assert client.post("/api/observations", json={**body, "confirm_uncertain": True,
+        "captured_at": "2026-01-01T10:00:00"}).status_code == 422
+    assert client.post("/api/observations", json={**body, "confirm_uncertain": True}).status_code == 200

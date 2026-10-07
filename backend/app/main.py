@@ -58,6 +58,11 @@ def sample_scan(body: SampleRequest):
 def store_scan(data, mode, photo):
     scan_id = str(uuid.uuid4())
     with db() as c:
+        if mode == "field":
+            for candidate in data["candidates"]:
+                reference = c.execute("SELECT photo FROM observations WHERE species_id=? AND mode='field' AND photo IS NOT NULL ORDER BY found_at DESC LIMIT 1", (candidate["species"]["id"],)).fetchone()
+                if reference:
+                    candidate["species"] = {**candidate["species"], "image": reference["photo"]}
         stale = c.execute("SELECT photo FROM scans WHERE created_at<? AND saved=0", ((now()-timedelta(days=7)).isoformat(),)).fetchall()
         for row in stale:
             if row["photo"]:
@@ -100,11 +105,24 @@ class SaveRequest(BaseModel):
     note: str = Field(default="", max_length=400)
     area: str | None = Field(default=None, max_length=100)
     confirm_uncertain: bool = False
+    offline_id: str | None = Field(default=None, min_length=1, max_length=128)
+    captured_at: datetime | None = None
 
 @app.post("/api/observations")
 def save_observation(body: SaveRequest):
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
+        if body.offline_id:
+            previous = c.execute("SELECT response FROM offline_saves WHERE id=?", (body.offline_id,)).fetchone()
+            if previous:
+                return json.loads(previous["response"])
+        found_at = now()
+        if body.captured_at is not None:
+            if not body.offline_id or body.captured_at.tzinfo is None:
+                raise HTTPException(422, "Offline captures need an ID and a timestamp with a timezone.")
+            if body.captured_at > found_at + timedelta(minutes=5):
+                raise HTTPException(422, "The capture time is in the future. Check your phone's clock.")
+            found_at = body.captured_at.astimezone(found_at.tzinfo)
         scan = c.execute("SELECT * FROM scans WHERE id=?", (body.scan_id,)).fetchone()
         if not scan:
             raise HTTPException(404, "This scan has expired. Try another photo.")
@@ -122,9 +140,39 @@ def save_observation(body: SaveRequest):
         category_first = not c.execute("SELECT 1 FROM observations o JOIN species s ON o.species_id=s.id WHERE mode=? AND json_extract(s.data,'$.category')=?", (scan["mode"], species["category"])).fetchone()
         xp = (30 + {"Common": 20, "Uncommon": 50, "Rare": 150}.get(species["rarity"], 20) + (100 if category_first else 0)) if first else 5
         observation_id = str(uuid.uuid4())
-        c.execute("INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)", (observation_id, species["id"], scan["mode"], now().isoformat(), scan["photo"], candidate["score"], xp, body.area, body.note))
+        c.execute("INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)", (observation_id, species["id"], scan["mode"], found_at.isoformat(), scan["photo"], candidate["score"], xp, body.area, body.note))
         c.execute("UPDATE scans SET saved=1 WHERE id=?", (body.scan_id,))
-    return {"id": observation_id, "xp": xp, "new_species": first, "species": species}
+        result = {"id": observation_id, "xp": xp, "new_species": first, "species": species}
+        if body.offline_id:
+            c.execute("INSERT INTO offline_saves VALUES (?,?)", (body.offline_id, json.dumps(result)))
+    return result
+
+class ObservationDetails(BaseModel):
+    mode: Mode = "field"
+    note: str | None = Field(default=None, max_length=400)
+    area: str | None = Field(default=None, max_length=100)
+    latitude: float | None = Field(default=None, ge=-85, le=85, allow_inf_nan=False)
+    longitude: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
+
+@app.post("/api/observations/{observation_id}/details")
+def update_observation(observation_id: str, body: ObservationDetails):
+    fields = body.model_fields_set
+    if ("latitude" in fields) != ("longitude" in fields) or ((body.latitude is None) != (body.longitude is None)):
+        raise HTTPException(422, "Choose both coordinates for a pin.")
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        if not c.execute("SELECT 1 FROM observations WHERE id=? AND mode=?", (observation_id, body.mode)).fetchone():
+            raise HTTPException(404, "Sighting not found in this collection.")
+        if "note" in fields:
+            c.execute("UPDATE observations SET note=? WHERE id=?", (body.note or "", observation_id))
+        if "area" in fields:
+            c.execute("UPDATE observations SET area=? WHERE id=?", (body.area or None, observation_id))
+        if "latitude" in fields:
+            if body.latitude is None:
+                c.execute("DELETE FROM observation_places WHERE observation_id=?", (observation_id,))
+            else:
+                c.execute("INSERT INTO observation_places VALUES (?,?,?) ON CONFLICT(observation_id) DO UPDATE SET latitude=excluded.latitude, longitude=excluded.longitude", (observation_id, body.latitude, body.longitude))
+    return {"updated": True}
 
 class ExpeditionRequest(BaseModel):
     mode: Mode = "demo"

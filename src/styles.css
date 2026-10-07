@@ -18,3 +18,72 @@
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.spin{animation:none}}
 .install-shortcut{color:#567146;min-width:36px;min-height:36px}.install-content{padding:25px 27px 28px}.app-icon{width:76px;height:76px;border-radius:19px;display:block;margin:0 auto 22px}.install-content h3,.capture-options h3{font-family:var(--serif);font-weight:400;color:#45683e;font-size:26px;margin:10px 0}.install-content>h3,.install-content>p{text-align:center}.install-content p{font-size:12px;line-height:1.8;color:#687b57}.install-content ol{padding-left:24px;margin:25px 0;color:#536c47;font-size:12px;line-height:1.9}.install-content li{padding:6px 0 6px 5px}.install-note{display:flex;align-items:flex-start;gap:12px;background:#edf3e6;padding:15px;border-radius:7px;margin-top:23px;color:#687b57}.install-note svg{flex-shrink:0;margin-top:3px}.install-note p{margin:0;font-size:11px}.install-success{display:flex;gap:10px;align-items:center;justify-content:center;padding:15px;background:#edf3e6;color:#45683e;font-size:12px;border-radius:7px;margin-top:22px}.capture-options{background:#f4f7eb;border:1px dashed #bdcfa7;border-radius:8px;text-align:center;padding:23px 28px;margin-top:21px}.capture-emblem{width:56px;height:56px;display:grid;place-items:center;background:#e5edda;border-radius:50%;color:#6e8a57;margin:0 auto 12px}.capture-options>p{font-size:10px;color:#69785d;margin:12px 0 23px}.capture-options>.secondary-button{margin-top:10px}.offline-banner{display:flex;gap:12px;align-items:center;padding:15px;background:#f3efdf;border:1px solid #dfd5b5;border-radius:8px;color:#6a633f;margin-bottom:25px}.offline-banner>svg{flex-shrink:0}.offline-banner>div{flex:1}.offline-banner strong{display:block;font-size:12px;font-weight:500}.offline-banner span{display:block;font-size:10px;line-height:1.7;margin-top:5px}.offline-banner button{border:0;background:none;color:#52693f;font-size:11px;text-decoration:underline;padding:10px}.pairing-card{max-width:450px;margin:auto}.pairing-card form{width:100%;max-width:340px;text-align:left;margin-top:20px}.pairing-card form button{margin-top:20px}.pairing-card form .error-box{margin-top:15px}.pairing-card .field-label{width:100%}
 @media(max-width:520px){.topbar-actions{gap:7px}.install-content{padding:23px 22px}.capture-options{padding:23px 18px}.offline-banner{align-items:flex-start;flex-wrap:wrap}.offline-banner>div{min-width:220px}.offline-banner button{margin-left:27px;padding:0}.topbar{padding-top:env(safe-area-inset-top);height:calc(64px + env(safe-area-inset-top))}}
+
+/* ==========================================================================
+   Retro pixel skin — Press Start 2P for labels/buttons, VT323 for display text.
+   Both faces are self-hosted in /public/fonts so the offline field guide keeps
+   its look without a network round-trip to a font CDN.
+   ========================================================================== */
+@font-face{font-family:'Press Start 2P';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/press-start-2p-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Press Start 2P';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/press-start-2p-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'VT323';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/vt323-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'VT323';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/vt323-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
+:root{--pixel:'Press Start 2P','VT323',monospace;--terminal:'VT323','Courier New',monospace;--serif:var(--terminal);--pixel-edge:#c6d4b4;--pixel-shadow:#d5ddc6}
+
+/* Display type: terminal face for every heading */
+h1,h2,h3,h4{font-family:var(--terminal);font-weight:400;letter-spacing:0;line-height:1.06}
+h1{font-size:44px}
+.hero h2{font-size:52px;line-height:1}
+.section-heading h2,.modal-heading h2,.level-card h2,.empty-state h2,.empty-collection h3,.expedition-grid .expedition-card h3,.journal-date,.badge-card h3,.locked-detail h3,.sample-heading h3{font-size:32px}
+
+/* Labels, chips, tabs and tags: chunky pixel lettering */
+.eyebrow,.section-heading .eyebrow,.expedition-card .eyebrow,.expedition-card .eyebrow>span,.journal-entry .eyebrow,.result-details>.eyebrow,.quest-detail>.eyebrow,.hero-tag,.sidebar-caption,.mode-chip,.outline-label,.date-label,.results-label,.results-label>span,.badge-status,.xp-label,.level-pill,.level-small,.nav-count,.specimen-number,.photo-label,.rarity,.species-category,.locked-label,.field-note>span,.hero-footnote,.greeting,.sample-heading span,.taxonomy-title,.detail-stats span,.taxonomy-tree span,.quest-objectives>div>span,.field-label,.field-label>span,.settings-toggle strong,.mode-options strong,.model-info strong{font-family:var(--pixel);font-weight:400;letter-spacing:.4px;line-height:1.7}
+.eyebrow,.section-heading .eyebrow,.expedition-card .eyebrow,.expedition-card .eyebrow>span,.hero-tag,.photo-label,.badge-status,.xp-label,.greeting,.outline-label,.mode-options strong,.settings-toggle strong,.model-info strong{font-size:9px}
+.sidebar-caption,.date-label,.results-label,.results-label>span,.specimen-number,.level-pill,.level-small,.nav-count,.rarity,.species-category,.locked-label,.field-note>span,.hero-footnote,.detail-stats span,.taxonomy-tree span,.sample-heading span,.field-label,.field-label>span,.quest-objectives>div>span{font-size:8px}
+
+/* Buttons */
+.primary-button,.secondary-button,.text-button,.category-tabs button{font-family:var(--pixel);font-weight:400;letter-spacing:0;line-height:1.7}
+.primary-button,.secondary-button,.category-tabs button{font-size:9px}
+.text-button{font-size:8px}
+
+/* Navigation and identity */
+.nav-item{font-family:var(--terminal);font-size:16px;letter-spacing:0;line-height:1.25}
+.mobile-nav button{font-family:var(--terminal);font-size:14px;letter-spacing:0;line-height:1.2}
+.brand>span{font-family:var(--pixel);font-size:13px;letter-spacing:0;line-height:2.3}
+.brand small{font-family:var(--terminal);font-size:10px;letter-spacing:.6px}
+.sidebar-profile strong{font-family:var(--terminal);font-size:16px}
+.sidebar-profile span:not(.level-pill){font-family:var(--terminal);font-size:13px}
+
+/* Body copy: the terminal face reads like a field notebook */
+.hero-copy>p,.page-intro>div>p:last-child,.capture-content>p:first-child,.quest-detail>p:not(.eyebrow),.empty-state p,.empty-collection p,.field-note p,.journal-entry p,.badge-card p,.level-card p,.install-content p,.privacy-card p,.outdoor-note p,.recognition-status p,.capture-tip,.install-note p,.install-content li,.locked-detail p,.quest-hint,.detail-note{font-family:var(--terminal);font-size:15px;line-height:1.35}
+.identification-note,.model-score-note,.fact-box p,.expeditions-info p,.offline-banner span,.offline-banner strong,.mode-options span,.settings-toggle span,.model-info p,.model-info>div,.model-info code,.sample-grid span,.upload-zone>span,.journal-meta,.journal-meta>span,.level-progress p,.level-progress>div:first-child,.collection-progress>div:first-child,.page-footer,.page-footer span,.confirm-check,.quest-objectives>div,.taxonomy-tree>div,.completed-expedition,.detail-note,.settings-content p,.settings-note,.toast,.collection-search-row select{font-family:var(--terminal);font-size:14px;line-height:1.4}
+
+/* Numerals and form fields */
+.stat-card strong{font-family:var(--terminal);font-size:34px;line-height:1;letter-spacing:0}
+.stat-card strong span{font-family:var(--terminal);font-size:16px;letter-spacing:0}
+.stat-card p{font-family:var(--terminal);font-size:14px}
+.collection-summary strong{font-family:var(--terminal);font-size:44px;line-height:1;letter-spacing:0}
+.collection-summary strong>span{font-family:var(--terminal);font-size:20px}
+.collection-summary p{font-family:var(--terminal);font-size:14px}
+.floating-label small{font-family:var(--pixel);font-size:6px;letter-spacing:.4px}
+.floating-label strong{font-family:var(--terminal);font-size:21px;line-height:1}
+.detail-stats strong{font-family:var(--terminal);font-size:21px;line-height:1}
+.upload-zone strong{font-family:var(--terminal);font-size:26px}
+.field-label input,.field-label textarea,.field-label select,.search-input input{font-family:var(--terminal);font-size:17px;line-height:1.25}
+
+/* Chunky pixel geometry: square corners and hard shadows instead of soft ones */
+.hero,.stat-card,.expedition-card,.species-card,.collection-summary,.level-card,.badge-card,.journal-entry,.field-note,.modal,.empty-collection,.privacy-card,.install-note,.capture-options,.upload-zone,.model-info,.offline-banner,.sample-grid>button,.mode-options>button,.result-tags>span,.field-label input,.field-label textarea,.field-label select,.search-input,.primary-button,.secondary-button,.category-tabs button,.mode-chip,.outline-label,.xp-label,.badge-status,.level-pill,.nav-count,.nav-item,.icon-button,.avatar,.top-avatar,.collected-check,.specimen,.specimen-number,.detail-image,.result-photo,.stat-icon,.level-emblem,.badge-emblem,.quest-objectives>div>span,.progress-track,.progress-track>span,.tiny-progress,.tiny-progress span,.streak-dots i,.mobile-nav button,.toast,.floating-label,.empty-state code{border-radius:0}
+.hero,.stat-card,.expedition-card,.species-card,.modal,.collection-summary,.level-card,.badge-card,.journal-entry{border-color:var(--pixel-edge)}
+.primary-button{box-shadow:3px 3px 0 #1f442980}
+.primary-button:hover:not(:disabled){box-shadow:3px 3px 0 #1f4429}
+.secondary-button,.category-tabs button{box-shadow:2px 2px 0 var(--pixel-shadow)}
+.stat-card,.species-card,.expedition-card,.journal-entry{box-shadow:3px 3px 0 var(--pixel-shadow)}
+.species-card:hover,.expedition-card:hover,.journal-entry:hover{box-shadow:4px 4px 0 #c2d0ae}
+.sample-heading{flex-wrap:wrap}
+
+/* Keep the display size in step with the layout breakpoints */
+@media(max-width:1200px){h1{font-size:40px}.hero h2{font-size:46px}.nav-item{font-size:15px}}
+@media(max-width:1000px){h1{font-size:38px}.hero h2{font-size:42px}}
+@media(max-width:760px){h1{font-size:36px}}
+@media(max-width:520px){h1{font-size:30px}.hero h2{font-size:33px}.section-heading h2,.modal-heading h2,.level-card h2,.empty-state h2,.empty-collection h3,.journal-date,.badge-card h3,.locked-detail h3{font-size:27px}.stat-card strong{font-size:28px}.primary-button,.secondary-button{font-size:8px}.sample-heading h3{font-size:20px}}

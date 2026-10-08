@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="210 0 240 160" shape-rendering="crispEdges" role="img" aria-labelledby="title desc">
+<title id="title">A quiet woodland discovery</title>
+<desc id="desc">Sunlight falls through layered trees onto a winding path, with a bird, butterfly, ferns, mushrooms and a reflective woodland pool.</desc>
+<defs>
+ <g id="fir"><path d="M-1 0h3v36h-3" fill="#698d70"/><path d="M-2-7h4v5h3v5h3v5h3v5h-6v3h9v5h-28v-5h9v-3h-6V8h3V3h3v-5h3z" fill="#83a782"/><path d="M-2-2h2v7h-3v5h-3v5h-5v-2h3V8h3V3h3z" fill="#a2bd8a"/></g>
+ <g id="leaves"><path d="M6 0h18v3h9v5h5v10h-4v7h-7v4H9v-3H2v-6h-5V9h4V4h5z" fill="#244f40"/><path d="M6 0h18v3h9v5h3v6h-8v5H13v-3H3v-4H0V8h4V4h2z" fill="#39704d"/><path d="M8 1h14v3h6v4H17v3H5V7h3z" fill="#5a8b52"/><path d="M10 2h9v2h-5v3H8V5h2zm16 8h5v3h-5z" fill="#88ad62"/><path d="M4 19h7v3H4zm19 3h7v2h-7z" fill="#316143"/></g>
+ <g id="fern"><path d="M0 0h2v-13H0zM-2-3h2v-3h-4v-3h-3v-3h-4v3h3v3h3v3zm4-2h3v-3h3v-3h3v-3H7v3H4v3H2z" fill="#284f39"/><path d="M-1-9h2v-3h-3v-3h-4v3h3v3zm3 4h2v-3h3v-3H5v2H2z" fill="#80a753"/></g>
+ <g id="flower"><path d="M0 0h1v7H0m1-3h3v1H1" fill="#3b6540"/><path d="M-1-4h3v2h2v3H2v2h-3V1h-2v-3h2z" fill="#fff1c8"/><path d="M0-1h1v2H0z" fill="#d69d50"/></g>
+ <g id="mushroom"><path d="M0 0h3v6H0z" fill="#f2dba5"/><path d="M-2-6h7v2h3v3h2v3H-7v-3h2v-3h3z" fill="#a55d42"/><path d="M-2-6h7v2H0v2h-5v-2h3z" fill="#d99058"/><path d="M0-4h2v2H0m4 2h2v2H4m-7 0h2v2h-2" fill="#f7dfb0"/></g>
+ <g id="grass"><path d="M0 0h2v-3H0v-3h-2v3H0m3 3h2v-4h2v-2H5v2H3z" fill="#85a75b"/></g>
+</defs>
+<path d="M0 0h600v160H0z" fill="#bacf9e" />
+<path d="M248 0h132v48h-16v25H266V48h-18z" fill="#d9dfa9" />
+<path d="M318 14h18v3h6v5h3v16h-3v5h-6v3h-18v-3h-6v-5h-3V22h3v-5h6z" fill="#f7e7b2" />
+<path d="M0 52h35v-8h44v8h41v-10h31v5h34v10h46v-8h25v11h43v6h41v-7h27v-8h38v5h31v-11h40v8h42v-8h36v6h46v109H0z" fill="#a7bf8d" />
+<use href="#fir" transform="translate(9 36) scale(1.2)"/>
+<use href="#fir" transform="translate(47 31) scale(1.2)"/>
+<use href="#fir" transform="translate(86 41) scale(1.2)"/>
+<use href="#fir" transform="translate(116 27) scale(1.2)"/>
+<use href="#fir" transform="translate(158 40) scale(1.2)"/>
+<use href="#fir" transform="translate(186 30) scale(1.2)"/>
+<use href="#fir" transform="translate(231 43) scale(1.2)"/>
+<use href="#fir" transform="translate(266 48) scale(1.2)"/>
+<use href="#fir" transform="translate(365 43) scale(1.2)"/>
+<use href="#fir" transform="translate(403 31) scale(1.2)"/>
+<use href="#fir" transform="translate(440 39) scale(1.2)"/>
+<use href="#fir" transform="translate(475 27) scale(1.2)"/>
+<use href="#fir" transform="translate(513 40) scale(1.2)"/>
+<use href="#fir" transform="translate(553 28) scale(1.2)"/>
+<use href="#fir" transform="translate(587 37) scale(1.2)"/>
+<path d="M40 16h4v89h-4z M40 49h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M96 21h4v77h-4z M96 54h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M171 8h4v94h-4z M171 41h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M238 25h4v73h-4z M238 58h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M271 32h4v66h-4z M271 65h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M378 15h4v86h-4z M378 48h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M434 9h4v92h-4z M434 42h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M502 19h4v87h-4z M502 52h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M560 11h4v94h-4z M560 44h-9v-3h-6v-3h-3v3h4v3h6v3h8z" fill="#789d79" />
+<path d="M0 91h24v-5h48v6h41v-8h37v9h52v-5h31v8h49v-5h48v5h30v-9h39v-6h28v8h48v-7h46v8h42v-6h38v6h33v70H0z" fill="#83a174" />
+<path d="M0 118h34v-7h41v5h42v-10h40v5h52v-6h38v6h31v-4h63v-4h44v-6h38v9h48v-5h40v9h47v-6h42v56H0z" fill="#608750" />
+<path d="M305 48h5v33h-5v18h-8V82h8z M347 42h4v38h-4v24h-7V77h7z" fill="#dce3a5" opacity=".36"/>
+<path d="M324 85h6v8h-12v9h-9v8h18v7h13v13h-13v11h-19v19h-63v-9h19v-12h26v-10h18v-6h-20v-8h-6v-13h13v-8h19v-5h10z" fill="#9f9060" />
+<path d="M325 85h4v7h-12v10h-9v10h17v7h10v10h-14v11h-20v20h-48v-6h18v-12h25v-10h19v-12h-21v-7h-8v-9h14v-8h18v-5h7z" fill="#d2ba7f" />
+<path d="M319 96h7v2h-7m-14 11h7v2h-7m9 17h11v2h-11m-24 19h13v3h-13m-27 11h12v2h-12" fill="#ecdaa1" />
+<path d="M377 115h39v5h25v8h20v10h24v22H350v-12h9v-17h18z" fill="#355e49" />
+<path d="M382 119h32v6h25v8h18v10h20v17H361v-11h6v-14h15z" fill="#538675" />
+<path d="M386 124h25v6h25v7h17v10h15v13H370v-12h5v-11h11z" fill="#81afa0" />
+<path d="M386 129h22v2h-22m-5 15h35v2h-35m48-7h16v2h-16m-25 14h37v2h-37" fill="#c6dcb7" />
+<path d="M16 15h13v120h5v8h8v5h-32v-5h7v-12h-2V55h2z" fill="#2c4938" />
+<path d="M24 20h3v110h-3z" fill="#8f8451" />
+<path d="M16 63h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M29 49h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(-14 5) scale(1.4)"/>
+<use href="#leaves" transform="translate(14 -4) scale(1.7)"/>
+<use href="#leaves" transform="translate(-4 27) scale(1.1)"/>
+<use href="#leaves" transform="translate(33 16) scale(1.2)"/>
+<path d="M91 8h8v111h5v8h8v5h-32v-5h7v-12h-2V48h2z" fill="#2c4938" />
+<path d="M94 13h3v101h-3z" fill="#8f8451" />
+<path d="M91 56h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M99 42h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(61 -2) scale(1.4)"/>
+<use href="#leaves" transform="translate(89 -11) scale(1.7)"/>
+<use href="#leaves" transform="translate(71 20) scale(1.1)"/>
+<use href="#leaves" transform="translate(108 9) scale(1.2)"/>
+<path d="M192 7h12v124h5v8h8v5h-32v-5h7v-12h-2V47h2z" fill="#2c4938" />
+<path d="M199 12h3v114h-3z" fill="#8f8451" />
+<path d="M192 55h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M204 41h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(162 -3) scale(1.4)"/>
+<use href="#leaves" transform="translate(190 -12) scale(1.7)"/>
+<use href="#leaves" transform="translate(172 19) scale(1.1)"/>
+<use href="#leaves" transform="translate(209 8) scale(1.2)"/>
+<path d="M417 4h11v114h5v8h8v5h-32v-5h7v-12h-2V44h2z" fill="#2c4938" />
+<path d="M423 9h3v104h-3z" fill="#8f8451" />
+<path d="M417 52h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M428 38h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(387 -6) scale(1.4)"/>
+<use href="#leaves" transform="translate(415 -15) scale(1.7)"/>
+<use href="#leaves" transform="translate(397 16) scale(1.1)"/>
+<use href="#leaves" transform="translate(434 5) scale(1.2)"/>
+<path d="M508 13h9v118h5v8h8v5h-32v-5h7v-12h-2V53h2z" fill="#2c4938" />
+<path d="M512 18h3v108h-3z" fill="#8f8451" />
+<path d="M508 61h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M517 47h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(478 3) scale(1.4)"/>
+<use href="#leaves" transform="translate(506 -6) scale(1.7)"/>
+<use href="#leaves" transform="translate(488 25) scale(1.1)"/>
+<use href="#leaves" transform="translate(525 14) scale(1.2)"/>
+<path d="M579 0h15v146h5v8h8v5h-32v-5h7v-12h-2V40h2z" fill="#2c4938" />
+<path d="M589 5h3v136h-3z" fill="#8f8451" />
+<path d="M579 48h-10v-5h-10v-4h-6v-14h4v11h8v4h9v4h5z M594 34h9v-5h7v-15h4v18h-7v5h-13z" fill="#2c4938" />
+<use href="#leaves" transform="translate(549 -10) scale(1.4)"/>
+<use href="#leaves" transform="translate(577 -19) scale(1.7)"/>
+<use href="#leaves" transform="translate(559 12) scale(1.1)"/>
+<use href="#leaves" transform="translate(596 1) scale(1.2)"/>
+<use href="#leaves" transform="translate(33 -25) scale(1.8)"/>
+<use href="#leaves" transform="translate(119 -29) scale(1.9)"/>
+<use href="#leaves" transform="translate(229 -34) scale(1.8)"/>
+<use href="#leaves" transform="translate(359 -35) scale(1.6)"/>
+<use href="#leaves" transform="translate(454 -28) scale(1.8)"/>
+<use href="#leaves" transform="translate(544 -31) scale(1.7)"/>
+<path d="M0 144h31v-7h25v7h29v-5h35v6h39v-8h35v7h34v16H0z M476 150h25v-8h28v7h34v-7h37v18H465v-5h11z" fill="#315c3d" />
+<path d="M421 69h-15v-3h-12v-3h-11v-3h-5v4h10v3h12v3h21z" fill="#2c4938" />
+<path d="M390 49h5v-4h7v3h3v8h-3v4h-10v-3h-5v-4h-5v-3h8z" fill="#25473b" />
+<path d="M394 50h8v7h-3v2h-6v-3h-2v-4h3z" fill="#df9a55" />
+<path d="M391 50h5v5h-6v-2h-3v-2h4z" fill="#729371" />
+<path d="M399 47h2v2h-2" fill="#fff0c6" />
+<path d="M405 49h3v2h-3m-13 11h2v3h-2m5-3h2v3h-2" fill="#e4bd70" />
+<path d="M293 78h4v2h2v6h-3v3h-4v-3h-2v-6h3m11-2h4v2h3v6h-2v3h-4v-3h-3v-6h2" fill="#dfac59" />
+<path d="M294 80h3v4h-3m11-4h3v4h-3" fill="#ffe3a0" />
+<path d="M299 80h3v11h-3m-2-14h2v3h-2m5-3h2v3h-2" fill="#35513a" />
+<use href="#fern" transform="translate(50 140) scale(1)"/>
+<use href="#fern" transform="translate(155 130) scale(1)"/>
+<use href="#fern" transform="translate(219 153) scale(1)"/>
+<use href="#fern" transform="translate(245 125) scale(1)"/>
+<use href="#fern" transform="translate(350 120) scale(1)"/>
+<use href="#fern" transform="translate(433 117) scale(1)"/>
+<use href="#fern" transform="translate(493 140) scale(1)"/>
+<use href="#fern" transform="translate(561 150) scale(1)"/>
+<use href="#flower" transform="translate(59 120) scale(1)"/>
+<use href="#flower" transform="translate(147 144) scale(1)"/>
+<use href="#flower" transform="translate(223 134) scale(1)"/>
+<use href="#flower" transform="translate(235 139) scale(1)"/>
+<use href="#flower" transform="translate(345 109) scale(1)"/>
+<use href="#flower" transform="translate(354 116) scale(1)"/>
+<use href="#flower" transform="translate(371 107) scale(1)"/>
+<use href="#flower" transform="translate(483 131) scale(1)"/>
+<use href="#flower" transform="translate(542 125) scale(1)"/>
+<use href="#flower" transform="translate(553 133) scale(1)"/>
+<use href="#mushroom" transform="translate(175 127) scale(1)"/>
+<use href="#mushroom" transform="translate(209 119) scale(1)"/>
+<use href="#mushroom" transform="translate(472 142) scale(1)"/>
+<use href="#grass" transform="translate(44 105) scale(1)"/>
+<use href="#grass" transform="translate(128 122) scale(1)"/>
+<use href="#grass" transform="translate(164 100) scale(1)"/>
+<use href="#grass" transform="translate(226 114) scale(1)"/>
+<use href="#grass" transform="translate(264 106) scale(1)"/>
+<use href="#grass" transform="translate(341 99) scale(1)"/>
+<use href="#grass" transform="translate(361 146) scale(1)"/>
+<use href="#grass" transform="translate(444 104) scale(1)"/>
+<use href="#grass" transform="translate(520 123) scale(1)"/>
+<use href="#grass" transform="translate(552 108) scale(1)"/>
+<path d="M282 62h2v2h-2m57 9h2v2h-2m-23-15h2v2h-2m42 28h2v2h-2" fill="#fff0c6" />
+</svg>

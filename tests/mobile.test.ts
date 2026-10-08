@@ -208,8 +208,9 @@ test('walk drafts remain private and unsaved through background sync, even for s
   } finally { globalThis.fetch=originalFetch; await removeQueuedObservation(id); }
 });
 
-async function phoneBrowser(initialHash:string, check:(dom:JSDOM, codes:string[])=>Promise<void>) {
+async function phoneBrowser(initialHash:string, check:(dom:JSDOM, codes:string[])=>Promise<void>, firstUse=false, guide=dashboard('field')) {
   const dom = new JSDOM('<div id="root"></div>',{url:'https://phone.test/'+initialHash});
+  if (!firstUse) dom.window.localStorage.setItem('naturedex-walkthrough-seen','1');
   const names = ['window','document','localStorage','HTMLElement','IS_REACT_ACT_ENVIRONMENT'];
   const originals = names.map(name=>Object.getOwnPropertyDescriptor(globalThis,name));
   const values = [dom.window,dom.window.document,dom.window.localStorage,dom.window.HTMLElement,true];
@@ -225,7 +226,7 @@ async function phoneBrowser(initialHash:string, check:(dom:JSDOM, codes:string[]
       return Response.json({connected:true});
     }
     if (String(input).startsWith('/api/dashboard')) {
-      return paired ? Response.json(dashboard('demo')) : Response.json({detail:'Connect this phone'},{status:401});
+      return paired ? Response.json(guide) : Response.json({detail:'Connect this phone'},{status:401});
     }
     return Response.json({status:'ok',model:{enabled:false,loaded:false,installed:false,device:'cpu'}});
   };
@@ -241,9 +242,124 @@ async function phoneBrowser(initialHash:string, check:(dom:JSDOM, codes:string[]
   }
 }
 
+test('first-use walkthrough explains all three actions, remembers completion, and can replay', async () => {
+  await phoneBrowser('#pair=walkthrough-test', async dom => {
+    await settleBrowser();
+    const click = async (text:string) => {
+      const button=Array.from(dom.window.document.querySelectorAll('button')).find(b=>b.textContent===text);
+      assert.ok(button, `Missing ${text} button`);
+      await act(async()=>button!.click());
+    };
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent || '',/Capture a little wonder/);
+    assert.equal(dom.window.document.body.style.overflow,'hidden');
+    await click('Next');
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent || '',/Enjoy a walk/);
+    await click('Next');
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent || '',/Grow your field guide/);
+    await click('Let’s explore');
+    assert.equal(dom.window.localStorage.getItem('naturedex-walkthrough-seen'),'1');
+    assert.equal(dom.window.document.querySelector('[role="dialog"]'),null);
+    assert.equal(dom.window.document.body.style.overflow,'');
+    const settings=dom.window.document.querySelector('button[aria-label="Open profile settings"]') as HTMLButtonElement;
+    await act(async()=>settings.click());
+    await click('Show the quick walkthrough');
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent || '',/Capture a little wonder/);
+    await click('Skip walkthrough');
+    assert.equal(dom.window.document.querySelector('[role="dialog"]'),null);
+  }, true);
+});
+
 async function settleBrowser() {
   await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,30)); });
 }
+
+test('simple navigation uses the real collection and walkthrough example never saves progress', async () => {
+  await phoneBrowser('#pair=simple-test', async dom => {
+    await settleBrowser();
+    const buttons = () => Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('button'));
+    const click = async (text:string) => {
+      const button = buttons().find(b => b.textContent?.trim() === text);
+      assert.ok(button, `Missing ${text}`);
+      await act(async () => button!.click());
+    };
+    assert.equal(dom.window.localStorage.getItem('naturedex-mode'), 'field');
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.mobile-nav button')).map(b=>b.textContent), ['Explore','Field Guide','Walk','Quests','Badges']);
+    let writes = 0;
+    const connectedFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      if (init?.method === 'POST') writes++;
+      return connectedFetch(input, init);
+    };
+    await click('Try an example');
+    assert.match(dom.window.document.querySelector('[role="dialog"]')!.textContent || '', /EXAMPLE ONLY/);
+    assert.equal(buttons().some(b => b.textContent?.includes('Save to Field Guide')), false);
+    await click('Back to walkthrough');
+    await click('Skip walkthrough');
+    assert.equal(writes, 0);
+    assert.equal(dom.window.document.querySelector('.home-extras')!.hasAttribute('open'), false);
+    assert.equal(dom.window.document.querySelector('.practice-browser'), null);
+    await act(async () => (dom.window.document.querySelector('.mobile-nav button:nth-child(2)') as HTMLButtonElement).click());
+    await click('Timeline');
+    assert.match(dom.window.document.querySelector('h1')!.textContent || '', /Field Guide/);
+    assert.match(dom.window.document.body.textContent || '', /Sighting timeline/);
+    await click('Species');
+    assert.match(dom.window.document.body.textContent || '', /Your field guide starts here/);
+    assert.equal(dom.window.document.querySelector('.undiscovered'), null);
+    assert.equal(dom.window.document.querySelector('.collection-progress'), null);
+    await act(async () => (dom.window.document.querySelector('[aria-label="Open profile settings"]') as HTMLButtonElement).click());
+    assert.equal(dom.window.document.querySelector('.profile-links'), null);
+    assert.equal(dom.window.document.querySelector('.mode-options'), null);
+    await act(async()=> (dom.window.document.querySelector('[aria-label="Close dialog"]') as HTMLButtonElement).click());
+    await click('Badges');
+    assert.match(dom.window.document.querySelector('h1')!.textContent || '', /Curiosity looks good/);
+  }, true);
+});
+
+test('field guide groups repeat sightings and includes species beyond the starter catalogue', async () => {
+  const guide = dashboard('field');
+  const species = {id:'neem',name:'Neem',scientific:'Azadirachta indica',category:'Plants',rarity:'Common',image:'/specimens/neem.svg',fact:'A leaf',habitat:'Gardens',taxonomy:{},tags:[],sightings:2,first_found:'2026-10-01T10:00:00Z',last_found:'2026-10-08T10:00:00Z'};
+  guide.collection = [species, {...species,id:'taxon-extended',name:'Wild orchid',scientific:'Orchidaceae example',sightings:1}, {...species,id:'locked',name:'Unseen species',sightings:0}];
+  guide.observations = [species, species, guide.collection[1]].map((s,i)=>({id:'sighting-'+i,species_id:s.id,name:s.name,category:s.category,image:s.image,found_at:`2026-10-0${8-i}T10:00:00Z`,xp:50,area:'Garden',note:'Field note '+i,score:null}));
+  await phoneBrowser('#pair=guide-views', async dom => {
+    await settleBrowser();
+    const click = async (text:string) => {
+      const button = Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent?.trim()===text);
+      assert.ok(button, `Missing ${text}`);
+      await act(async()=>button!.click());
+    };
+    await act(async()=> (dom.window.document.querySelector('.mobile-nav button:nth-child(2)') as HTMLButtonElement).click());
+    assert.equal(dom.window.document.querySelectorAll('.dex-grid .species-card').length,2);
+    assert.match(dom.window.document.querySelector('.field-guide-header')!.textContent || '', /2 species discovered · 3 sightings/);
+    assert.match(dom.window.document.querySelector('.dex-grid')!.textContent || '', /Wild orchid/);
+    assert.equal(dom.window.document.querySelector('.undiscovered'),null);
+    await click('Timeline');
+    assert.equal(dom.window.document.querySelectorAll('.journal-entry').length,3);
+    assert.equal(dom.window.document.querySelector('.mobile-nav [aria-current="page"]')!.textContent,'Field Guide');
+    // Leaflet's stylesheet needs the browser bundler; verify Map live, not in JSDOM.
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.guide-views button')).map(b=>b.textContent), ['Species','Timeline','Map']);
+    await click('Species');
+    assert.equal(dom.window.document.querySelectorAll('.dex-grid .species-card').length,2);
+  }, false, guide);
+});
+
+test('sidebar exposes expeditions and achievements and difficulty filters select matching quests', async () => {
+  const guide = dashboard('field');
+  guide.expeditions = (['easy','medium','hard'] as const).map(level => ({...guide.expeditions[0],id:level,title:level+' outing',difficulty:level}));
+  await phoneBrowser('#pair=difficulty-test', async dom => {
+    await settleBrowser();
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.sidebar nav button span:first-of-type')).map(b=>b.textContent), ['Explore','Field Guide','Walk','Expeditions','Achievements']);
+    const expeditionButton = Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('.sidebar nav button')).find(b=>b.textContent==='Expeditions')!;
+    await act(async()=>expeditionButton.click());
+    assert.equal(dom.window.document.querySelectorAll('.expedition-grid .expedition-card').length,3);
+    for (const level of ['easy','medium','hard']) {
+      const filter = Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('.difficulty-filters button')).find(b=>b.textContent===level)!;
+      await act(async()=>filter.click());
+      assert.equal(filter.getAttribute('aria-pressed'),'true');
+      assert.equal(dom.window.document.querySelectorAll('.expedition-grid .expedition-card').length,1);
+      assert.equal(dom.window.document.querySelector('.expedition-grid h3')!.textContent,level+' outing');
+    }
+  }, false, guide);
+});
 
 test('opening the private link in an already loaded pairing screen connects without typing a code', async()=>{
   await phoneBrowser('',async(dom,codes)=>{
@@ -294,6 +410,56 @@ test('walk mode captures multiple photos without inference and keeps them after 
   } finally { for(const id of ids) await removeQueuedObservation(id); }
 });
 
+test('GPS requests are opt-in, handle denial, and stay attached to offline walk photos', async()=>{
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  const ids:string[] = [];
+  let requests=0;
+  try {
+    Object.defineProperty(globalThis,'navigator',{configurable:true,value:{geolocation:{getCurrentPosition(success:any,failure:any,options:any) { assert.equal(options.enableHighAccuracy,false); assert.equal(options.timeout,30000); requests++; if(requests===1) failure({code:1}); else success({coords:{latitude:22.5,longitude:88.3}}); }}}});
+    await phoneBrowser('#pair=gps-test', async dom=>{
+      Object.defineProperty(dom.window,'isSecureContext',{value:true,configurable:true});
+      await settleBrowser();
+      const click=async(text:string)=>{const button=Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent?.trim()===text)!; assert.ok(button,text); await act(async()=>button.click());};
+      await click('Walk'); await click('Start a walk');
+      assert.equal(requests,0);
+      await click('Use my location');
+      assert.match(dom.window.document.body.textContent || '',/Location is blocked/);
+      await click('Use my location');
+      assert.equal(requests,2);
+      assert.match(dom.window.document.body.textContent || '',/22.5000, 88.3000/);
+      const upload=dom.window.document.querySelector<HTMLInputElement>('input[type=file][multiple]')!;
+      Object.defineProperty(upload,'files',{value:[new File(['gps-photo'],'gps.jpg',{type:'image/jpeg'})],configurable:true});
+      await act(async()=>{upload.dispatchEvent(new dom.window.Event('change',{bubbles:true})); await new Promise(resolve=>setTimeout(resolve,50));});
+      const stored=(await getOfflineQueue()).filter(item=>item.walkName==='A little adventure');
+      ids.push(...stored.map(item=>item.id));
+      assert.ok(stored.length);
+      assert.equal(stored[0].latitude,22.5); assert.equal(stored[0].longitude,88.3);
+      assert.equal(dom.window.document.querySelector('.location-selected'),null);
+      await click('Use my location');
+      const remove=dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Remove GPS location"]')!;
+      await act(async()=>remove.click());
+      assert.equal(dom.window.document.querySelector('.location-selected'),null);
+      await click('Finish walk');
+      const profile = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open profile settings"]')!;
+      await act(async()=>profile.click());
+      const toggle = Array.from(dom.window.document.querySelectorAll<HTMLLabelElement>('.settings-toggle')).find(label=>label.textContent?.includes('Offer GPS location'))!.querySelector<HTMLInputElement>('input')!;
+      const beforeToggle=requests;
+      await act(async()=>toggle.click());
+      assert.equal(requests,beforeToggle);
+      assert.equal(dom.window.localStorage.getItem('naturedex-gps-enabled'),'false');
+      assert.match(dom.window.document.body.textContent || '',/Show place-name field/);
+      await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')!.click());
+      await click('Start a walk');
+      assert.equal(Array.from(dom.window.document.querySelectorAll('button')).some(button=>button.textContent?.trim()==='Use my location'),false);
+      assert.match(dom.window.document.body.textContent || '',/GPS is off in your preferences/);
+      await click('Finish walk');
+    });
+  } finally {
+    for(const id of ids) await removeQueuedObservation(id);
+    if(previousNavigator) Object.defineProperty(globalThis,'navigator',previousNavigator); else delete (globalThis as any).navigator;
+  }
+});
+
 test('reviewing a saved tentative photo requires confirmation and saves its capture date', async()=>{
   const species = {id:'test-leaf',name:'Test leaf',scientific:'Testus leaf',category:'Plants',rarity:'Unrated',
     image:'/specimens/unknown.svg',tags:[],taxonomy:{},fact:'Compare visible features',habitat:'Unknown',
@@ -308,9 +474,9 @@ test('reviewing a saved tentative photo requires confirmation and saves its capt
       const lookup = (text:string) => Array.from(dom.window.document.querySelectorAll('button')).find(button=>button.textContent?.includes(text))!;
       await act(async()=>lookup('Review saved photos').click());
       assert.match(dom.window.document.body.textContent || '',/Test leaf/);
-      assert.equal(lookup('Add to my NatureDex').disabled,true);
+      assert.equal(lookup('Save to Field Guide').disabled,true);
       await act(async()=>dom.window.document.querySelector<HTMLInputElement>('.confirm-check input')!.click());
-      assert.equal(lookup('Add to my NatureDex').disabled,false);
+      assert.equal(lookup('Save to Field Guide').disabled,false);
       const savedFetch = globalThis.fetch;
       let body:any;
       globalThis.fetch = async(input, init)=>{
@@ -320,7 +486,7 @@ test('reviewing a saved tentative photo requires confirmation and saves its capt
         }
         return savedFetch(input,init);
       };
-      await act(async()=>{ lookup('Add to my NatureDex').click(); await new Promise(resolve=>setTimeout(resolve,30)); });
+      await act(async()=>{ lookup('Save to Field Guide').click(); await new Promise(resolve=>setTimeout(resolve,30)); });
       await settleBrowser();
       assert.equal(body.offline_id,'review-ui-photo');
       assert.equal(body.captured_at,createdAt);

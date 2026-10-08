@@ -1,4 +1,12 @@
 /* Keep capture, collection and walks within reach. */
+.computer-connection { max-width: 640px; margin: 0 auto; }
+.computer-connection form, .computer-connection details { width: 100%; max-width: 480px; text-align: left; }
+.computer-connection .field-label { text-align: left; }
+.computer-connection input { min-height: 48px; }
+.computer-connection>.connection-note { font-size: 18px; line-height: 1.4; }
+.computer-connection summary { cursor: pointer; font: 23px/1.3 var(--terminal); padding: 12px 0; }
+.computer-connection details p { font: 20px/1.4 var(--terminal); margin: 0 0 16px; }
+.computer-connection code { overflow-wrap: anywhere; }
 .simple-hero { min-height: 220px; margin-bottom: 28px; }
 .simple-hero .hero-copy { padding: 28px; }
 .simple-hero h2 { font-size: 40px; line-height: 1.1; }

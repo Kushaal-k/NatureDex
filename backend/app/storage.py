@@ -91,14 +91,15 @@ def expedition_state(c, mode, day):
     result = []
     for template in EXPEDITIONS:
         run = c.execute("SELECT * FROM expeditions WHERE id=? AND day=? AND mode=?", (template["id"], day, mode)).fetchone()
-        expedition = json.loads(run["data"]) if run else dict(template)
+        expedition = {"difficulty": template.get("difficulty", "medium"), **(json.loads(run["data"]) if run else dict(template))}
         goals = []
         observations = []
         if run:
             observations = [json.loads(r["data"]) for r in c.execute("SELECT s.data FROM observations o JOIN species s ON o.species_id=s.id WHERE o.mode=? AND o.found_at>=?", (mode, run["started_at"]))]
         for goal in expedition["goals"]:
-            done = any(goal.get("category") == s["category"] or (goal.get("tag") and goal["tag"] in s.get("tags", [])) for s in observations)
-            goals.append({**goal, "done": bool(done)})
+            matches = {s["id"] for s in observations if goal.get("category") == s["category"] or (goal.get("tag") and goal["tag"] in s.get("tags", []))}
+            target = goal.get("count", 1)
+            goals.append({**goal, "progress": min(len(matches), target), "target": target, "done": len(matches) >= target})
         result.append({**expedition, "goals": goals, "active": bool(run), "claimed": bool(run and run["claimed"]), "completed": sum(g["done"] for g in goals)})
     return result
 

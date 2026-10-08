@@ -102,12 +102,28 @@ def main():
                 connection["ready"] = True
     threading.Thread(target=read_tunnel,daemon=True).start()
     deadline = time.monotonic() + 75
+    next_metrics_check = 0
     announced = False
     while not stopping.wait(.25):
         if gateway.poll() is not None:
             raise RuntimeError("Phone gateway stopped.")
         if tunnel.poll() is not None:
             raise RuntimeError("The phone tunnel stopped. Run npm run phone to create a new link.")
+        # Client versions can change log wording. Metrics confirm a live
+        # connection independently, rather than waiting for one exact line.
+        if not announced and time.monotonic() >= next_metrics_check:
+            next_metrics_check = time.monotonic() + 2
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:20249/metrics", timeout=1) as response:
+                    metrics = response.read().decode("utf-8")
+                active = re.search(r"^cloudflared_tunnel_ha_connections\s+([0-9.]+)", metrics, re.M)
+                if active and float(active.group(1)) > 0:
+                    connection["ready"] = True
+                hostname = re.search(r'userHostname="(https://[a-z0-9-]+\.trycloudflare\.com)"', metrics)
+                if hostname:
+                    connection["url"] = hostname.group(1)
+            except (OSError, ValueError):
+                pass
         if not announced and connection["ready"] and connection["url"]:
             announced = True
             link = connection["url"] + "/#pair=" + code

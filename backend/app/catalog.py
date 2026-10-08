@@ -33,16 +33,32 @@ BY_ID = {s["id"]: s for s in CATALOG}
 BY_SCIENTIFIC = {s["scientific"].lower(): s for s in CATALOG}
 
 EXPEDITIONS = [
-    {"id": "pollinator", "title": "The pollinator hunt", "subtitle": "Small wings. A big role in our world.", "duration": 25, "xp": 350, "theme": "meadow", "goals": [
+    {"id": "pollinator", "difficulty": "hard", "title": "The pollinator hunt", "subtitle": "Small wings. A big role in our world.", "duration": 25, "xp": 350, "theme": "meadow", "goals": [
         {"label": "Find a flowering plant", "tag": "flower"},
         {"label": "Spot a butterfly", "tag": "butterfly"},
         {"label": "Discover a bee", "tag": "bee"}]},
-    {"id": "backyard", "title": "Backyard beginnings", "subtitle": "An adventure, right on your doorstep.", "duration": 15, "xp": 200, "theme": "garden", "goals": [
+    {"id": "backyard", "difficulty": "medium", "title": "Backyard beginnings", "subtitle": "An adventure, right on your doorstep.", "duration": 15, "xp": 200, "theme": "garden", "goals": [
         {"label": "Discover a plant", "category": "Plants"},
         {"label": "Look for a bird", "category": "Birds"},
         {"label": "Meet a tiny insect", "category": "Insects"}]},
-    {"id": "woodland", "title": "Under the canopy", "subtitle": "Look up. Look down. Look a little closer.", "duration": 30, "xp": 300, "theme": "woodland", "goals": [
+    {"id": "woodland", "difficulty": "medium", "title": "Under the canopy", "subtitle": "Look up. Look down. Look a little closer.", "duration": 30, "xp": 300, "theme": "woodland", "goals": [
         {"label": "Identify a tree", "tag": "tree"},
         {"label": "Find a fungus on fallen wood", "category": "Fungi"},
         {"label": "Spot a bird in the branches", "category": "Birds"}]},
+    {"id": "first-leaf", "difficulty": "easy", "title": "One little leaf", "subtitle": "Start with a plant just outside your door.", "duration": 10, "xp": 100, "theme": "garden", "goals": [
+        {"label": "Identify one plant", "category": "Plants"}]},
+    {"id": "garden-pair", "difficulty": "easy", "title": "A garden hello", "subtitle": "Two small discoveries on a gentle stroll.", "duration": 15, "xp": 150, "theme": "meadow", "goals": [
+        {"label": "Discover a plant", "category": "Plants"},
+        {"label": "Spot an insect", "category": "Insects"}]},
+    {"id": "bird-break", "difficulty": "easy", "title": "A little bird break", "subtitle": "Pause and watch a bird from a comfortable distance.", "duration": 10, "xp": 100, "theme": "woodland", "goals": [
+        {"label": "Identify one bird", "category": "Birds"}]},
+    {"id": "plant-portraits", "difficulty": "medium", "title": "Three plant portraits", "subtitle": "Notice how different leaves share the same path.", "duration": 25, "xp": 250, "theme": "garden", "goals": [
+        {"label": "Identify three different plant species", "category": "Plants", "count": 3}]},
+    {"id": "nature-mosaic", "difficulty": "hard", "title": "A nature mosaic", "subtitle": "Meet four branches of the natural world.", "duration": 45, "xp": 450, "theme": "woodland", "goals": [
+        {"label": "Discover a plant", "category": "Plants"},
+        {"label": "Spot a bird", "category": "Birds"},
+        {"label": "Identify an insect", "category": "Insects"},
+        {"label": "Find a fungus without disturbing it", "category": "Fungi"}]},
+    {"id": "leaf-library", "difficulty": "hard", "title": "A library of leaves", "subtitle": "Build a richer picture of the plants around you.", "duration": 40, "xp": 400, "theme": "garden", "goals": [
+        {"label": "Identify five different plant species", "category": "Plants", "count": 5}]},
 ]

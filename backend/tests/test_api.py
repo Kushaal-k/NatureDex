@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from backend.app import main, storage
 from backend.app.catalog import BY_ID
@@ -26,7 +26,12 @@ def save_sample(client, species):
     return response.json(), scan["scan_id"]
 
 def image_bytes():
-    image = Image.new("RGB", (32, 32), "green")
+    image = Image.new("RGB", (256, 256), "green")
+    draw = ImageDraw.Draw(image)
+    for y in range(0, 256, 16):
+        for x in range(0, 256, 16):
+            if (x // 16 + y // 16) % 2:
+                draw.rectangle((x, y, x + 15, y + 15), fill="white")
     exif = Image.Exif()
     exif[270] = "Metadata must not persist"
     buffer = io.BytesIO()
@@ -57,6 +62,19 @@ def test_pin_validation_and_collection_isolation(client):
     for invalid in [{'latitude':1}, {'latitude':None,'longitude':1}, {'latitude':86,'longitude':0}, {'latitude':0,'longitude':181}, {'note':'a'*401}]:
         assert client.post(route,json={'mode':'demo', **invalid}).status_code == 422
     assert client.get('/api/dashboard').json()['observations'][0]['note'] == sighting['note']
+
+def test_optional_gps_is_saved_atomically_and_offline_retries_preserve_it(client):
+    scan = client.post('/api/scans/sample', json={'species_id':'neem'}).json()
+    route = '/api/observations'
+    for invalid in [{'latitude':1}, {'latitude':86,'longitude':0}, {'latitude':0,'longitude':181}]:
+        assert client.post(route, json={'scan_id':scan['scan_id'], **invalid}).status_code == 422
+    body = {'scan_id':scan['scan_id'], 'latitude':22.5, 'longitude':88.3, 'offline_id':'gps-retry'}
+    result = client.post(route,json=body)
+    assert result.status_code == 200
+    assert client.post(route,json={**body, 'latitude':0, 'longitude':0}).json() == result.json()
+    sighting = next(o for o in client.get('/api/dashboard').json()['observations'] if o['id'] == result.json()['id'])
+    assert (sighting['latitude'], sighting['longitude']) == (22.5,88.3)
+    assert not client.get('/api/dashboard?mode=field').json()['observations']
 
 def test_demo_and_real_collections_are_isolated(client):
     demo = client.get("/api/dashboard?mode=demo").json()
@@ -97,6 +115,40 @@ def test_expedition_requires_new_sightings_and_reward_is_claimed_once(client):
     assert client.post("/api/expeditions/pollinator/claim", json={"mode": "demo"}).status_code == 409
     assert client.get("/api/dashboard").json()["profile"]["xp"] == before + 350
     assert client.get("/api/dashboard?mode=field").json()["profile"]["xp"] == 0
+
+def test_expedition_choices_cover_all_difficulties_and_legacy_runs(client):
+    choices = client.get('/api/dashboard?mode=field').json()['expeditions']
+    assert len({e['id'] for e in choices}) == 9
+    assert {level: sum(e['difficulty'] == level for e in choices) for level in ['easy', 'medium', 'hard']} == {'easy': 3, 'medium': 3, 'hard': 3}
+    client.post('/api/expeditions/first-leaf/start', json={'mode': 'demo'})
+    with storage.db() as c:
+        run = c.execute("SELECT data FROM expeditions WHERE id='first-leaf'").fetchone()
+        legacy = json.loads(run['data'])
+        legacy.pop('difficulty')
+        c.execute("UPDATE expeditions SET data=? WHERE id='first-leaf'", (json.dumps(legacy),))
+    before = next(e for e in client.get('/api/dashboard').json()['expeditions'] if e['id'] == 'first-leaf')
+    assert before['difficulty'] == 'easy'
+    assert before['completed'] == 0
+    save_sample(client, 'neem')
+    assert client.post('/api/expeditions/first-leaf/claim', json={'mode': 'demo'}).json()['xp'] == 100
+
+@pytest.mark.parametrize('quest,target,reward', [('plant-portraits', 3, 250), ('leaf-library', 5, 400)])
+def test_distinct_species_goals_ignore_repeat_sightings(client, quest, target, reward):
+    client.post(f'/api/expeditions/{quest}/start', json={'mode': 'demo'})
+    save_sample(client, 'neem')
+    save_sample(client, 'neem')
+    state = next(e for e in client.get('/api/dashboard').json()['expeditions'] if e['id'] == quest)
+    assert state['goals'][0]['progress'] == 1
+    assert state['goals'][0]['target'] == target
+    assert not state['goals'][0]['done']
+    assert client.post(f'/api/expeditions/{quest}/claim', json={'mode': 'demo'}).status_code == 422
+    for species in ['hibiscus', 'marigold', 'banyan', 'sacred-fig'][:target-1]:
+        save_sample(client, species)
+    state = next(e for e in client.get('/api/dashboard').json()['expeditions'] if e['id'] == quest)
+    assert state['goals'][0]['progress'] == target
+    assert state['goals'][0]['done']
+    assert client.post(f'/api/expeditions/{quest}/claim', json={'mode': 'demo'}).json()['xp'] == reward
+    assert client.post(f'/api/expeditions/{quest}/claim', json={'mode': 'demo'}).status_code == 409
 
 def test_invalid_and_oversized_images_are_rejected(client):
     assert client.post("/api/scans", files={"file": ("fake.jpg", b"not an image", "image/jpeg")}).status_code == 422
@@ -186,3 +238,18 @@ def test_offline_tentative_match_still_requires_confirmation_and_valid_date(clie
     assert client.post("/api/observations", json={**body, "confirm_uncertain": True,
         "captured_at": "2026-01-01T10:00:00"}).status_code == 422
     assert client.post("/api/observations", json={**body, "confirm_uncertain": True}).status_code == 200
+
+
+def test_quality_warning_requires_confirmation_even_for_high_ranked_match(client, monkeypatch):
+    from backend.app import main
+    from backend.app.catalog import BY_ID
+    import io
+    monkeypatch.setattr(main.recognizer, 'predict', lambda image: {'candidates':[{'species':BY_ID['neem'],'score':.95}], 'uncertain':False,'message':'Test match','score_note':'Test'})
+    stream = io.BytesIO()
+    Image.new('RGB', (256, 256), 'green').save(stream, 'PNG')
+    response = client.post('/api/scans', files={'file':('plain.png',stream.getvalue(),'image/png')})
+    assert response.status_code == 200
+    scan = response.json()
+    assert scan['uncertain'] and scan['photo_quality']['needs_review']
+    assert client.post('/api/observations',json={'scan_id':scan['scan_id']}).status_code == 422
+    assert client.post('/api/observations',json={'scan_id':scan['scan_id'],'confirm_uncertain':True}).status_code == 200

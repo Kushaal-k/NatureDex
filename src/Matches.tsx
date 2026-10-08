@@ -12,11 +12,11 @@ const prompts: Record<string, string> = {
 export function Matches({ scan, selected, choose }: { scan: Scan; selected: number; choose: (index: number) => void }) {
   if (scan.mode === 'demo') return null;
   return <section className="match-comparison" aria-label="Possible identification matches">
-    <h4>Which looks closest?</h4><p>Check the features in your photo. Illustrations are decorative, not reference photos.</p>
+    <h4>Compare matches</h4><p>Choose the closest features. Illustrations are not reference photos.</p>
     <div className="match-cards">{scan.candidates.slice(0, 3).map((candidate, i) => <button key={candidate.species.id} className={`match-card ${selected === i ? 'selected' : ''}`} aria-pressed={selected === i} onClick={() => choose(i)}>
       <div className="match-art">{candidate.species.image !== '/specimens/unknown.svg' ? <img src={specimenArtwork(candidate.species.image)} alt="" /> : <Leaf size={36} />}<span>{i + 1}</span>{selected === i && <Check size={18} className="match-check" />}<small className="match-image-label">{candidate.species.image === '/specimens/unknown.svg' ? 'No reference photo' : candidate.species.image.endsWith('.svg') ? 'Illustration' : candidate.species.image.startsWith('/photos/') ? 'Previous sighting' : 'Reference photo'}</small></div>
       <strong>{candidate.species.name}</strong><small>{candidate.species.scientific}</small>
-      <p>{candidate.species.fact.startsWith('This species is new') ? prompts[candidate.species.category] || 'Compare distinctive markings, shape, and colour.' : candidate.species.fact}</p>
+      {selected === i && <p>{prompts[candidate.species.category] || 'Compare distinctive markings, shape, and colour.'}</p>}
     </button>)}</div>
   </section>;
 }

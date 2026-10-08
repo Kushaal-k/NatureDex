@@ -4,6 +4,9 @@ import App from './App';
 import './styles.css';
 import './retro.css';
 import './adventures.css';
+import './mobile.css';
+import './guidance.css';
+import './simple.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

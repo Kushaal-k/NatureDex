@@ -1,3 +1,4 @@
+import { LocationPicker, type LocationPoint } from './LocationPicker';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, ImagePlus, Footprints, Eye, X, CheckCircle2 } from 'lucide-react';
 import { getOfflineQueue, queueOfflineObservation, removeQueuedObservation, type QueuedObservation } from './snapshot';
@@ -11,23 +12,25 @@ function DraftPhoto({ item }: { item: QueuedObservation }) {
   useEffect(() => { const next = URL.createObjectURL(item.blob); setUrl(next); return () => URL.revokeObjectURL(next); }, [item.blob]);
   return <img src={url || undefined} alt="Photo saved during your walk" />;
 }
-export function Walk({ items, changed, review, offline, active, setActive }: { items: QueuedObservation[]; changed: (items: QueuedObservation[]) => void; review: (item: QueuedObservation) => void; offline: boolean; active: WalkSession | null; setActive: (session: WalkSession | null) => void }) {
+export function Walk({ items, changed, review, offline, active, setActive, gpsEnabled = true, showPlaceName = true }: { gpsEnabled?: boolean; showPlaceName?: boolean; items: QueuedObservation[]; changed: (items: QueuedObservation[]) => void; review: (item: QueuedObservation) => void; offline: boolean; active: WalkSession | null; setActive: (session: WalkSession | null) => void }) {
+  const [location, setLocation] = useState<LocationPoint | null>(null);
+  useEffect(() => { if (!gpsEnabled) setLocation(null); }, [gpsEnabled]);
   const [name, setName] = useState(''); const [note, setNote] = useState(''); const [area, setArea] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
   const [discarded, setDiscarded] = useState<QueuedObservation | null>(null);
   const camera = useRef<HTMLInputElement>(null); const gallery = useRef<HTMLInputElement>(null);
   const drafts = items.filter(item => item.reviewRequired);
   function begin() { const session = { id:crypto.randomUUID(), name:name.trim() || 'A little adventure', startedAt:new Date().toISOString() }; localStorage.setItem('naturedex-walk', JSON.stringify(session)); setActive(session); setMessage(''); }
-  function finish() { localStorage.removeItem('naturedex-walk'); setActive(null); setMessage('Walk complete. Your photos are ready whenever you are.'); }
+  function finish() { localStorage.removeItem('naturedex-walk'); setActive(null); setLocation(null); setMessage('Walk complete. Your photos are ready whenever you are.'); }
   async function capture(files: File[]) {
     if (!active || busy) return;
     setBusy(true); setError(''); let saved = 0;
     try {
       for (const file of files) {
         if (!file.type.startsWith('image/') || file.size > 12 * 1024 * 1024) { setError('Some photos were skipped. Choose images smaller than 12 MB.'); continue; }
-        await queueOfflineObservation({ id:crypto.randomUUID(), blob:file, mode:'field', note, area:area.trim() || null, createdAt:new Date().toISOString(), reviewRequired:true, walkId:active.id, walkName:active.name }); saved++;
+        await queueOfflineObservation({ id:crypto.randomUUID(), blob:file, mode:'field', note, area:showPlaceName ? area.trim() || null : null, latitude:location?.latitude ?? null, longitude:location?.longitude ?? null, createdAt:new Date().toISOString(), reviewRequired:true, walkId:active.id, walkName:active.name }); saved++;
       }
-      changed(await getOfflineQueue()); setMessage(`${saved} photo${saved === 1 ? '' : 's'} saved for later.`); setNote('');
+      changed(await getOfflineQueue()); setMessage(`${saved} photo${saved === 1 ? '' : 's'} saved for later.`); setNote(''); setLocation(null);
     } catch { setError('Could not save all photos on this device. Free some storage and try again.'); changed(await getOfflineQueue()); }
     finally { setBusy(false); }
   }
@@ -35,7 +38,7 @@ export function Walk({ items, changed, review, offline, active, setActive }: { i
   async function undoDiscard() { if (!discarded) return; try { await queueOfflineObservation(discarded); changed(await getOfflineQueue()); setDiscarded(null); } catch { setError('Could not restore this draft. Try again.'); } }
   return <><div className="page-intro"><div><p className="eyebrow">LESS SCREEN. MORE GREEN.</p><h1>Take NatureDex for a walk.</h1><p>Save moments along the way. Identify them when you get back.</p></div></div>
     <section className="walk-console"><Footprints size={34} /><div><h2>{active ? active.name : 'Ready to head outside?'}</h2><p>{active ? `Started ${new Date(active.startedAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${drafts.filter(d => d.walkId === active.id).length} photos saved` : 'Your photos stay on this device until you choose to identify them.'}</p></div>
-      {!active ? <><label className="field-label">Name your walk<input maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. A lap around the park" /></label><button className="primary-button" onClick={begin}><Footprints size={18} />Start a walk</button></> : <div className="walk-capture"><label className="field-label">Place name <span>(optional)</span><input maxLength={100} value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Riverside park" /></label><label className="field-label">Note for your next photo <span>(optional)</span><input maxLength={400} value={note} onChange={e => setNote(e.target.value)} placeholder="What caught your eye?" /></label><button className="primary-button" disabled={busy} onClick={() => camera.current?.click()}><Camera size={18} />Take a photo</button><button className="secondary-button" disabled={busy} onClick={() => gallery.current?.click()}><ImagePlus size={18} />Add photos</button><button className="text-button" disabled={busy} onClick={finish}><CheckCircle2 size={16} />Finish walk</button></div>}
+      {!active ? <><label className="field-label">Name your walk<input maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. A lap around the park" /></label><button className="primary-button" onClick={begin}><Footprints size={18} />Start a walk</button></> : <div className="walk-capture">{showPlaceName && <label className="field-label">Place name <span>(optional)</span><input maxLength={100} value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Riverside park" /></label>}<label className="field-label">Note for your next photo <span>(optional)</span><input maxLength={400} value={note} onChange={e => setNote(e.target.value)} placeholder="What caught your eye?" /></label><LocationPicker enabled={gpsEnabled} value={location} changed={setLocation} /><button className="primary-button" disabled={busy} onClick={() => camera.current?.click()}><Camera size={18} />Take a photo</button><button className="secondary-button" disabled={busy} onClick={() => gallery.current?.click()}><ImagePlus size={18} />Add photos</button><button className="text-button" disabled={busy} onClick={finish}><CheckCircle2 size={16} />Finish walk</button></div>}
       <input ref={camera} className="sr-only" type="file" accept="image/*" capture="environment" tabIndex={-1} onChange={e => { capture(Array.from(e.target.files || [])); e.target.value = ''; }} /><input ref={gallery} className="sr-only" type="file" accept="image/*" multiple tabIndex={-1} onChange={e => { capture(Array.from(e.target.files || [])); e.target.value = ''; }} />
     </section>{error && <p className="error-box" role="alert">{error}</p>}{message && <p className="walk-message" role="status">{message}</p>}
     {discarded && <div className="walk-message" role="status">Draft removed. <button className="text-button" onClick={undoDiscard}>Undo</button></div>}

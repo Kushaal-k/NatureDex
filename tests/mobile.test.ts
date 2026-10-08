@@ -10,6 +10,7 @@ import { JSDOM } from 'jsdom';
 import { act, createElement, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '../src/App';
+import { emptyFieldGuide } from '../src/snapshot';
 
 const originalFetch = globalThis.fetch;
 function dashboard(mode:Mode):Dashboard {
@@ -26,7 +27,10 @@ test('saved phone guide stays available offline, with separate sample and real c
     assert.equal(saved.offline,true);
     assert.equal(saved.dashboard.profile.xp,430);
     assert.ok(saved.savedAt);
-    await assert.rejects(loadFieldGuide('field'),BackendUnavailable);
+    const fresh = await loadFieldGuide('field');
+    assert.equal(fresh.offline,true);
+    assert.equal(fresh.dashboard.mode,'field');
+    assert.equal(fresh.dashboard.collection.length,0);
     globalThis.fetch = async () => Response.json(dashboard('field'));
     await loadFieldGuide('field');
     globalThis.fetch = async () => new Response('Cloudflare tunnel offline',{status:502});
@@ -272,6 +276,19 @@ test('first-use walkthrough explains all three actions, remembers completion, an
 async function settleBrowser() {
   await act(async()=>{ await new Promise(resolve=>setTimeout(resolve,30)); });
 }
+
+test('a fresh guide without laptop expeditions still renders and permits starting a walk', async () => {
+  await phoneBrowser('#pair=fresh-empty', async dom => {
+    await settleBrowser();
+    assert.match(dom.window.document.body.textContent || '', /Adventure starts outside/);
+    const walk = Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Walk')!;
+    await act(async () => walk.click());
+    assert.match(dom.window.document.body.textContent || '', /Ready to head outside/);
+    const start = Array.from(dom.window.document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Start a walk')!;
+    await act(async () => start.click());
+    assert.ok(dom.window.localStorage.getItem('naturedex-walk'));
+  }, false, emptyFieldGuide());
+});
 
 test('simple navigation uses the real collection and walkthrough example never saves progress', async () => {
   await phoneBrowser('#pair=simple-test', async dom => {

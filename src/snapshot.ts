@@ -1,4 +1,5 @@
 import { api, BackendUnavailable, PairingRequired } from './api';
+import { backendFetch } from './connection';
 import type { Dashboard, Mode, Scan } from './types';
 
 interface Snapshot { key: Mode; dashboard: Dashboard; savedAt: string }
@@ -22,6 +23,8 @@ export interface QueuedObservation {
   reviewRequired?: boolean;
   walkId?: string;
   walkName?: string;
+  autoIdentify?: boolean;
+  syncState?: 'waiting' | 'identifying' | 'review';
 }
 
 function openStore(): Promise<IDBDatabase> {
@@ -92,7 +95,7 @@ export async function cacheUserPhotos(dashboard: Dashboard): Promise<void> {
     try {
       const existing = await getCachedPhoto(url);
       if (!existing && typeof fetch !== 'undefined') {
-        const res = await fetch(url);
+        const res = await backendFetch(url);
         if (res.ok) {
           const blob = await res.blob();
           await putCachedPhoto(url, blob);
@@ -201,34 +204,48 @@ export async function removeQueuedObservation(id: string): Promise<void> {
   } finally { db.close(); }
 }
 
-interface SyncResult { synced: number; failed: number }
+interface SyncResult { synced: number; failed: number; ready: number }
 let activeSync: Promise<SyncResult> | null = null;
+let syncController: AbortController | null = null;
+export function cancelOfflineSync() { syncController?.abort(); }
 export function syncOfflineQueue(): Promise<SyncResult> {
   if (activeSync) return activeSync;
-  const work = () => runOfflineSync();
+  syncController = new AbortController();
+  const signal = syncController.signal;
+  const work = () => runOfflineSync(signal);
   activeSync = (typeof navigator !== 'undefined' && navigator.locks
     ? navigator.locks.request('naturedex-offline-sync', work)
-    : work()).finally(() => { activeSync = null; });
+    : work()).finally(() => { activeSync = null; syncController = null; });
   return activeSync;
 }
 
-async function runOfflineSync(): Promise<SyncResult> {
+async function runOfflineSync(signal: AbortSignal): Promise<SyncResult> {
   const queue = await getOfflineQueue().catch(() => []);
-  if (queue.length === 0) return { synced: 0, failed: 0 };
+  if (queue.length === 0) return { synced: 0, failed: 0, ready: 0 };
   let synced = 0;
   let failed = 0;
+  let ready = 0;
   for (const item of queue) {
-    // Walk photos are deliberately held for review, even while connected.
-    if (item.reviewRequired) continue;
+    if (signal.aborted) break;
+    // Identify opted-in walk photos automatically, but never save their matches without review.
+    if (item.reviewRequired && (!item.autoIdentify || item.scan)) continue;
     try {
+      if (item.autoIdentify) {
+        await queueOfflineObservation({ ...item, syncState:'identifying' });
+        if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('naturedex-queue-changed'));
+      }
       const form = new FormData();
       form.append('file', item.blob, `offline-${item.id}.jpg`);
-      const scan = item.scan || await api<Scan>('/scans', { method: 'POST', body: form });
-      if (!item.scan) await queueOfflineObservation({ ...item, scan });
+      const scan = item.scan || await api<Scan>('/scans', { method: 'POST', body: form, signal });
+      const current = (await getOfflineQueue()).find(photo => photo.id === item.id);
+      if (!current) continue;
+      if (!item.scan) await queueOfflineObservation({ ...current, scan, syncState:'review' });
+      if (item.reviewRequired) { ready++; continue; }
       // Retain the photo and candidates until the user reviews a tentative match.
       if (scan.uncertain) continue;
       await api('/observations', {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scan_id: scan.scan_id,
@@ -245,14 +262,22 @@ async function runOfflineSync(): Promise<SyncResult> {
       await removeQueuedObservation(item.id);
       synced++;
     } catch (error) {
+      // A draft may have been discarded while its identification was in flight.
+      const current = (await getOfflineQueue()).find(photo => photo.id === item.id);
+      if (current?.autoIdentify) await queueOfflineObservation({ ...current, syncState:'waiting' });
       // A cached unsaved scan may expire after a long offline period.
-      if (error instanceof Error && /expired/i.test(error.message)) {
-        await queueOfflineObservation({ ...item, scan: undefined });
+      if (current && error instanceof Error && /expired/i.test(error.message)) {
+        await queueOfflineObservation({ ...current, scan: undefined, syncState:'waiting' });
       }
       failed++;
     }
   }
-  return { synced, failed };
+  if (typeof window !== 'undefined') window.dispatchEvent(new window.Event('naturedex-queue-changed'));
+  return { synced, failed, ready };
+}
+
+export function emptyFieldGuide(mode: Mode = 'field'): Dashboard {
+  return {mode,collection:[],observations:[],expeditions:[],achievements:[],profile:{xp:0,level:1,title:'Backyard beginner',level_start:0,next_level:500,discovered:0,streak:0,total_sightings:0}};
 }
 
 export async function loadFieldGuide(mode: Mode, signal?: AbortSignal) {
@@ -279,6 +304,7 @@ export async function loadFieldGuide(mode: Mode, signal?: AbortSignal) {
         const enriched = await restoreCachedPhotos(snapshot.dashboard);
         return { dashboard: enriched, offline: true, savedAt: snapshot.savedAt, readOnly: true };
       }
+      return {dashboard:emptyFieldGuide(mode),offline:true,savedAt:null,readOnly:true};
     }
     throw error;
   }

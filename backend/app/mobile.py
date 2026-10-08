@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -40,15 +41,38 @@ def init_sessions_db(db_path: Path):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON mobile_sessions(expires_at)")
 
 
-def create_mobile_app(code: str, *, upstream="http://127.0.0.1:8000", transport=None, dist=None, db_path=None):
+def create_mobile_app(code: str, *, upstream="http://127.0.0.1:8000", transport=None, dist=None, db_path=None, frontend_origins=()):
     if len(code) < 40:
         raise ValueError("A random pairing secret of at least 40 characters is required")
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    allowed_origins = set(frontend_origins)
+    for origin in allowed_origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme != 'https' or not parsed.netloc or parsed.path or parsed.query or parsed.fragment or parsed.username or '*' in parsed.netloc:
+            raise ValueError('Frontend origins must be exact HTTPS origins, without paths or wildcards')
     session = secrets.token_urlsafe(48)
     attempts_by_ip: dict[str, deque[float]] = {}
     sqlite_path = Path(db_path) if db_path is not None else None
     if sqlite_path is not None:
         init_sessions_db(sqlite_path)
+        with sqlite3.connect(sqlite_path, timeout=10) as conn:
+            conn.execute('CREATE TABLE IF NOT EXISTS remote_sessions (token_hash TEXT PRIMARY KEY, code_hash TEXT NOT NULL, origin TEXT NOT NULL, expires_at REAL NOT NULL)')
+    remote_sessions = {}
+
+    def remote_session(request):
+        origin = request.headers.get('origin', '')
+        header = request.headers.get('authorization', '')
+        if origin not in allowed_origins or not header.startswith('Bearer '):
+            return False
+        token_hash = hashlib.sha256(header[7:].encode('utf-8')).hexdigest()
+        if sqlite_path is not None:
+            with sqlite3.connect(sqlite_path, timeout=10) as conn:
+                row = conn.execute('SELECT code_hash, origin, expires_at FROM remote_sessions WHERE token_hash=?', (token_hash,)).fetchone()
+        else:
+            row = remote_sessions.get(token_hash)
+        if not row or row[1] != origin or row[2] < time() or not hmac.compare_digest(row[0], hashlib.sha256(code.encode('utf-8')).hexdigest()):
+            return False
+        return True
 
     def is_valid_session(token: str) -> bool:
         if not token or not token.isascii():
@@ -83,15 +107,16 @@ def create_mobile_app(code: str, *, upstream="http://127.0.0.1:8000", transport=
     async def protect(request: Request, call_next):
         path = request.url.path
         if path == "/api/mobile/pair":
-            if request.method != "POST" or not same_origin(request):
+            if request.method != "POST" or not (same_origin(request) or request.headers.get('origin') in allowed_origins):
                 response = JSONResponse({"detail": "Open your private HTTPS phone link to connect."}, 403)
             else:
                 response = await call_next(request)
         elif path.startswith(("/api", "/photos")):
             cookie = request.cookies.get(COOKIE, "")
-            if not is_valid_session(cookie):
+            remote = remote_session(request)
+            if not remote and not is_valid_session(cookie):
                 response = JSONResponse({"detail": "Connect this phone using your private NatureDex link."}, 401)
-            elif request.method not in ("GET", "HEAD") and not same_origin(request):
+            elif not remote and request.method not in ("GET", "HEAD") and not same_origin(request):
                 response = JSONResponse({"detail": "This action must come from your NatureDex app."}, 403)
             else:
                 response = await call_next(request)
@@ -136,6 +161,17 @@ def create_mobile_app(code: str, *, upstream="http://127.0.0.1:8000", transport=
             return JSONResponse({"detail": "That code does not match. Open the current private phone link."}, 403)
 
         new_session = secrets.token_urlsafe(48)
+        origin = request.headers.get('origin', '')
+        if origin in allowed_origins and not same_origin(request):
+            token_hash = hashlib.sha256(new_session.encode('utf-8')).hexdigest()
+            record = (hashlib.sha256(code.encode('utf-8')).hexdigest(), origin, time() + 365 * 24 * 60 * 60)
+            if sqlite_path is not None:
+                with sqlite3.connect(sqlite_path, timeout=10) as conn:
+                    conn.execute('DELETE FROM remote_sessions WHERE expires_at < ?', (time(),))
+                    conn.execute('INSERT INTO remote_sessions VALUES (?,?,?,?)', (token_hash, *record))
+            else:
+                remote_sessions[token_hash] = record
+            return JSONResponse({'connected': True, 'access_token': new_session}, headers={'Cache-Control':'no-store'})
         if sqlite_path is not None:
             ts = time()
             expires_at = ts + 30 * 24 * 60 * 60
@@ -178,6 +214,9 @@ def create_mobile_app(code: str, *, upstream="http://127.0.0.1:8000", transport=
     directory = Path(dist) if dist else ROOT / "dist"
     if directory.exists():
         app.mount("/", StaticFiles(directory=directory, html=True), name="app")
+    if allowed_origins:
+        # Outermost middleware answers preflight, including requests denied by pairing.
+        app.add_middleware(CORSMiddleware, allow_origins=sorted(allowed_origins), allow_methods=['GET','HEAD','POST'], allow_headers=['Authorization','Content-Type'], allow_credentials=False)
     return app
 
 
@@ -185,4 +224,5 @@ def app_factory():
     code = os.environ.get("NATUREDEX_PAIRING_CODE", "")
     from backend.app.storage import DATA
     db_path = DATA / "naturedex.sqlite"
-    return create_mobile_app(code, db_path=db_path)
+    origins = [value.strip() for value in os.environ.get('NATUREDEX_FRONTEND_ORIGINS', '').split(',') if value.strip()]
+    return create_mobile_app(code, db_path=db_path, frontend_origins=origins)

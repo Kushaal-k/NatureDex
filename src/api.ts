@@ -1,3 +1,5 @@
+import { backendFetch } from './connection';
+
 export class BackendUnavailable extends Error {}
 export class PairingRequired extends Error {}
 
@@ -8,8 +10,8 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const cancel = () => deadline.abort();
   signal?.addEventListener('abort', cancel, { once:true });
   if (signal?.aborted) deadline.abort();
-  const timer = options?.method === 'POST' ? undefined : setTimeout(cancel, 8000);
-  try { response = await fetch(`/api${path}`, { ...options, signal:deadline.signal }); }
+  const timer = setTimeout(cancel, options?.method === 'POST' ? 600000 : 8000);
+  try { response = await backendFetch(`/api${path}`, { ...options, signal:deadline.signal }); }
   catch (error) {
     if (options?.signal?.aborted) throw error;
     throw new BackendUnavailable('NatureDex cannot reach its identification server. Reconnect to the computer running NatureDex, then try again.');

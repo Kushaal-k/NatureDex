@@ -1,27 +1,33 @@
 import { useState } from 'react';
-import { ArrowUpRight, Laptop, RefreshCw } from 'lucide-react';
-import { computerLink } from './computerLink';
+import { Laptop, RefreshCw } from 'lucide-react';
+import { connectLaptop, readConnection } from './connection';
 
 export function ComputerConnection({ retry }: { retry: () => void }) {
-  const [link, setLink] = useState('');
+  const [link, setLink] = useState(() => readConnection()?.origin || '');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return <div className="empty-state computer-connection">
     <Laptop size={42} />
     <h2>Connect to your laptop</h2>
-    <p>Open your laptop’s private phone link to use your Field Guide and identify discoveries.</p>
-    <form onSubmit={event => {
+    <p>Pair once. Photos stay on this phone until your laptop is available.</p>
+    {readConnection() && <p className="connection-note">Laptop paired. We’ll reconnect automatically while this app is open.</p>}
+    <form onSubmit={async event => {
       event.preventDefault();
-      try { window.location.assign(computerLink(link, window.location.origin)); }
+      setBusy(true); setError('');
+      try { await connectLaptop(link, code); setCode(''); setLink(readConnection()?.origin || ''); retry(); }
       catch (error) { setError(error instanceof Error ? error.message : 'Check your phone link.'); }
+      finally { setBusy(false); }
     }}>
       <label className="field-label">Private phone link
         <input type="url" required value={link} onChange={event => { setLink(event.target.value); setError(''); }} placeholder="https://…trycloudflare.com/#pair=…" autoComplete="off" spellCheck={false} autoCapitalize="none" />
       </label>
+      <label className="field-label">Pairing code<input type="password" value={code} onChange={event => setCode(event.target.value)} autoComplete="off" placeholder="Included in your private link" /></label>
       {error && <p className="error-box" role="alert">{error}</p>}
-      <button className="primary-button full-width" type="submit">Open my NatureDex<ArrowUpRight size={17} /></button>
+      <button className="primary-button full-width" disabled={busy} type="submit">{busy ? 'Connecting…' : 'Pair my laptop'}</button>
     </form>
-    <p className="connection-note">This opens NatureDex at your laptop’s address. Keep the laptop and its phone launcher running, and keep the link private.</p>
-    <details><summary>Where do I find the link?</summary><p>On your laptop, start NatureDex with the CPU Phone launcher or <code>npm run phone</code>. Copy the complete HTTPS link it shows, including the pairing part.</p></details>
+    <p className="connection-note">Your app stays at this address. Your laptop needs to be awake to identify photos.</p>
+    <details><summary>Where do I find the link?</summary><p>Start the NatureDex companion on your laptop. Its configuration must allow this app’s address. Copy its private pairing link here once. Use a stable laptop address for automatic reconnection.</p></details>
     <button className="text-button" type="button" onClick={retry}><RefreshCw size={16} />Retry this connection</button>
   </div>;
 }

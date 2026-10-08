@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build && node scripts/precache.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node scripts/test.mjs && npm run test:mobile",
-    "test:mobile": "node --import tsx --test tests/mobile.test.ts",
+    "test:mobile": "node --import tsx --test tests/mobile.test.ts tests/directSync.test.ts tests/computerLink.test.ts",
     "phone": "node scripts/phone.mjs"
   },
   "dependencies": {

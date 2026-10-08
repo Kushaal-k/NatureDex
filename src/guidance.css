@@ -1,0 +1,30 @@
+.walkthrough-content { padding: 24px; }
+.walkthrough-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 22px; }
+.walkthrough-progress>span { width: 32px; height: 6px; background: #c9d3a6; border: 1px solid var(--border); }
+.walkthrough-progress>span.current { background: var(--green); }
+.walkthrough-progress>p { margin-left: auto; font: 18px/1 var(--terminal); color: var(--muted); }
+.walkthrough-icon { display: grid; place-items: center; width: 76px; height: 76px; border: 2px solid var(--ink); background: var(--screen); box-shadow: 3px 3px 0 var(--pixel-shadow); margin-bottom: 20px; color: var(--green); }
+.walkthrough-content h3 { font: 36px/1.1 var(--terminal); margin-bottom: 12px; }
+.walkthrough-content>p { font: 15px/1.6 'Segoe UI', sans-serif; color: var(--muted); }
+.walkthrough-hint { font: 13px/1.6 'Segoe UI', sans-serif; padding: 14px; margin: 18px 0 22px; background: #e5e9c9; border-left: 3px solid var(--border); color: var(--green); }
+.walkthrough-content>.text-button { margin-top: 10px; min-height: 44px; }
+.walkthrough-content>.primary-button+.secondary-button { margin-top: 14px; }
+.walkthrough-replay { margin-top: 18px; min-height: 44px; }
+.identification-feedback { margin: 18px 0; }
+.photo-quality-hints { padding: 16px; border: 1px solid #b9a467; background: #f2e7be; margin-bottom: 12px; }
+.photo-quality-hints h4 { font: 28px/1.15 var(--terminal); margin-bottom: 12px; }
+.photo-quality-hints>div+div { margin-top: 12px; padding-top: 12px; border-top: 1px solid #b9a46780; }
+.photo-quality-hints strong, .match-explanation strong { font: 22px/1.2 var(--terminal); display: block; color: var(--ink); }
+.photo-quality-hints p, .match-explanation p { font: 13px/1.5 'Segoe UI', sans-serif; color: #615028; margin-top: 5px; }
+.match-explanation { display: flex; align-items: flex-start; gap: 10px; background: #e5e9c9; border: 1px solid var(--border); padding: 14px; margin-bottom: 12px; }
+.match-explanation>svg { flex-shrink: 0; margin-top: 3px; }
+.match-explanation p { color: var(--muted); }
+.photo-guide-note { font: 12px/1.5 'Segoe UI', sans-serif; color: var(--muted); margin-top: 10px; }
+@media(max-width:520px) {
+  .walkthrough-content { padding: 20px; }
+  .walkthrough-content h3 { font-size: 32px; }
+  .walkthrough-content>p { font-size: 14px; }
+  .walkthrough-icon { width: 64px; height: 64px; margin-bottom: 16px; }
+  .photo-quality-hints { padding: 14px; }
+  .identification-feedback .secondary-button { min-height: 48px; font-size: 8px; }
+}

@@ -1,7 +1,7 @@
 """Persistent direct phone connection. Model and photos stay on the laptop.
 
-Configure a named Cloudflare tunnel to route your laptop hostname to
-http://127.0.0.1:8010 before using this companion. No quick tunnel addresses.
+Use Tailscale Funnel (no custom domain) or a named Cloudflare tunnel to
+route a stable laptop hostname to http://127.0.0.1:8010.
 """
 import argparse
 import hmac
@@ -42,6 +42,14 @@ def validate_config(config):
         raise ValueError('The phone app and laptop must have distinct origins')
     if urlsplit(config['laptop_origin']).hostname.endswith('.trycloudflare.com'):
         raise ValueError('Automatic reconnection needs a stable hostname, not a quick tunnel')
+    config['transport'] = config.get('transport', 'cloudflare')
+    if config['transport'] == 'tailscale':
+        hostname = urlsplit(config['laptop_origin']).hostname
+        if not hostname.endswith('.ts.net') or urlsplit(config['laptop_origin']).port is not None:
+            raise ValueError('Use the Tailscale device HTTPS hostname on the default port')
+        return config
+    if config['transport'] != 'cloudflare':
+        raise ValueError('Choose tailscale or cloudflare transport')
     name = config.get('tunnel_name', '')
     if not name or name.startswith('-') or any(c.isspace() for c in name):
         raise ValueError('Enter the existing named tunnel name or ID')
@@ -59,6 +67,27 @@ def validate_config(config):
         raise ValueError('The tunnel must end with a catch-all http_status:404 rule')
     config['tunnel_config'] = str(path)
     return config
+
+
+def tailscale_client():
+    tool = os.environ.get('NATUREDEX_TAILSCALE') or shutil.which('tailscale')
+    if not tool and os.name == 'nt':
+        tool = str(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Tailscale/tailscale.exe')
+    if not tool or not Path(tool).is_file():
+        raise RuntimeError('Install Tailscale and sign in once before configuring the companion')
+    return tool
+
+
+def tailscale_origin():
+    result = subprocess.run([tailscale_client(), 'status', '--json'], capture_output=True, text=True, timeout=15,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    if result.returncode:
+        raise RuntimeError('Cannot access Tailscale. Open it and sign in, then retry.')
+    status = json.loads(result.stdout)
+    hostname = status.get('Self', {}).get('DNSName', '').rstrip('.')
+    if status.get('BackendState') != 'Running' or not hostname.endswith('.ts.net'):
+        raise RuntimeError('Sign in to Tailscale on this laptop before configuring NatureDex')
+    return https_origin('https://' + hostname)
 
 
 def pairing_code():
@@ -95,9 +124,14 @@ def run(config):
         raise RuntimeError('Build the phone interface first with npm run build')
     if listening(8010):
         raise RuntimeError('Another phone gateway is using port 8010. Stop that launcher before starting the companion.')
-    tool = os.environ.get('NATUREDEX_CLOUDFLARED') or shutil.which('cloudflared') or str(ROOT / 'tools' / ('cloudflared.exe' if os.name == 'nt' else 'cloudflared'))
-    if not Path(tool).is_file():
-        raise RuntimeError('Install the official cloudflared client before enabling the companion')
+    tool = None
+    if config['transport'] == 'tailscale':
+        if tailscale_origin() != config['laptop_origin']:
+            raise RuntimeError('The Tailscale device address changed. Reconfigure and pair again.')
+    else:
+        tool = os.environ.get('NATUREDEX_CLOUDFLARED') or shutil.which('cloudflared') or str(ROOT / 'tools' / ('cloudflared.exe' if os.name == 'nt' else 'cloudflared'))
+        if not Path(tool).is_file():
+            raise RuntimeError('Install the official cloudflared client before enabling the companion')
     code = pairing_code()
     (STATE / 'companion-invitation.txt').write_text(invitation(config, code), encoding='utf-8')
     from phone_qr import save_phone_qr
@@ -135,13 +169,15 @@ def run(config):
                 if listening(8010): break
                 if stopped.wait(.5): return
             else: raise RuntimeError('The companion gateway did not become ready')
-            command = [tool,'tunnel','--config',config['tunnel_config'],'--no-autoupdate','run',config['tunnel_name']]
-            tunnel = launch(command, output)
+            # Funnel is configured once with --bg and managed across reboots by
+            # Tailscale. The companion owns only its gateway/backend in this mode.
+            command = [tool,'tunnel','--config',config['tunnel_config'],'--no-autoupdate','run',config['tunnel_name']] if tool else None
+            tunnel = launch(command, output) if command else None
             logging.info('Companion running. Pair once using .mobile/companion-invitation.txt or the private QR.')
             while not stopped.wait(3):
                 if backend and backend.poll() is not None: raise RuntimeError('The identification backend stopped')
                 if gateway.poll() is not None: raise RuntimeError('The protected gateway stopped')
-                if tunnel.poll() is not None:
+                if tunnel and tunnel.poll() is not None:
                     logging.warning('Tunnel disconnected; retrying in ten seconds')
                     if stopped.wait(10): break
                     tunnel = launch(command, output)
@@ -161,6 +197,7 @@ def main():
     parser.add_argument('--laptop')
     parser.add_argument('--tunnel')
     parser.add_argument('--tunnel-config')
+    parser.add_argument('--transport', choices=('cloudflare', 'tailscale'), default='cloudflare')
     args = parser.parse_args()
     STATE.mkdir(exist_ok=True)
     if args.stop:
@@ -172,7 +209,8 @@ def main():
         print('Companion is stopping its gateway, tunnel and owned backend.')
         return
     if args.configure:
-        config = validate_config({'frontend_origin':args.frontend or '', 'laptop_origin':args.laptop or '', 'tunnel_name':args.tunnel or '', 'tunnel_config':args.tunnel_config or ''})
+        laptop_origin = args.laptop or (tailscale_origin() if args.transport == 'tailscale' else '')
+        config = validate_config({'frontend_origin':args.frontend or '', 'laptop_origin':laptop_origin, 'transport':args.transport, 'tunnel_name':args.tunnel or '', 'tunnel_config':args.tunnel_config or ''})
         CONFIG.write_text(json.dumps(config, indent=2), encoding='utf-8')
         (STATE / 'companion-invitation.txt').write_text(invitation(config, pairing_code()), encoding='utf-8')
         print('Configured. Your private pairing invitation is in .mobile/companion-invitation.txt')

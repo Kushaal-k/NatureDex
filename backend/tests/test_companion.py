@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 import pytest
+import json
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('naturedex_companion', Path(__file__).resolve().parents[2]/'scripts/companion.py')
 companion=importlib.util.module_from_spec(spec)
@@ -30,3 +32,26 @@ def test_companion_rejects_unprotected_tunnel_and_temporary_addresses(tmp_path):
     config=configuration(tmp_path)
     config['frontend_origin']='https://naturedex.onrender.com/path'
     with pytest.raises(ValueError): companion.validate_config(config)
+
+
+def test_tailscale_needs_no_domain_or_cloudflare_config():
+    config = companion.validate_config({'frontend_origin':'https://naturedex.onrender.com',
+        'laptop_origin':'https://laptop.example.ts.net', 'transport':'tailscale'})
+    assert config['transport'] == 'tailscale'
+    for origin in ('https://laptop.example.com', 'https://laptop.example.ts.net:8443'):
+        with pytest.raises(ValueError, match='Tailscale device'):
+            companion.validate_config({**config, 'laptop_origin':origin})
+    with pytest.raises(ValueError, match='Choose'):
+        companion.validate_config({**config, 'transport':'unknown'})
+
+
+def test_tailscale_origin_requires_signed_in_device(monkeypatch):
+    monkeypatch.setattr(companion, 'tailscale_client', lambda:'tailscale')
+    def result(state, hostname):
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'BackendState':state,'Self':{'DNSName':hostname}}))
+    monkeypatch.setattr(companion.subprocess, 'run', lambda *a, **k:result('NoState',''))
+    with pytest.raises(RuntimeError, match='Sign in'): companion.tailscale_origin()
+    monkeypatch.setattr(companion.subprocess, 'run', lambda *a, **k:result('Running','laptop.example.ts.net.'))
+    assert companion.tailscale_origin() == 'https://laptop.example.ts.net'
+    monkeypatch.setattr(companion.subprocess, 'run', lambda *a, **k:SimpleNamespace(returncode=1))
+    with pytest.raises(RuntimeError, match='Cannot access'): companion.tailscale_origin()

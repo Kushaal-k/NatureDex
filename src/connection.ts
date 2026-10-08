@@ -27,8 +27,13 @@ export function backendFetch(path: string, options: RequestInit = {}) {
 export async function connectLaptop(value: string, pairingCode: string): Promise<void> {
   let link: URL;
   try { link = new URL(value.trim()); } catch { throw new Error('Enter your laptop’s complete HTTPS address.'); }
+  const invitation = new URLSearchParams(link.hash.slice(1));
+  const embeddedComputer = invitation.get('computer');
+  if (link.origin === window.location.origin && embeddedComputer) {
+    try { link = new URL(embeddedComputer); } catch { throw new Error('The invitation has an invalid laptop address.'); }
+  }
   if (link.protocol !== 'https:' || link.username || link.password || link.origin === window.location.origin) throw new Error('Use your laptop’s HTTPS address.');
-  const code = new URLSearchParams(link.hash.slice(1)).get('pair') || pairingCode.trim();
+  const code = invitation.get('pair') || pairingCode.trim();
   if (!code) throw new Error('Enter the pairing code shown on your laptop.');
   const previous = readConnection();
   if (previous && previous.origin !== link.origin) throw new Error('This app is already paired with a different laptop address. Use its existing address to reconnect.');

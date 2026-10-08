@@ -20,7 +20,7 @@ export function ComputerConnection({ retry }: { retry: () => void }) {
       finally { setBusy(false); }
     }}>
       <label className="field-label">Private phone link
-        <input type="url" required value={link} onChange={event => { setLink(event.target.value); setError(''); }} placeholder="https://…trycloudflare.com/#pair=…" autoComplete="off" spellCheck={false} autoCapitalize="none" />
+        <input type="url" required value={link} onChange={event => { setLink(event.target.value); setError(''); }} placeholder="Paste your private laptop pairing link" autoComplete="off" spellCheck={false} autoCapitalize="none" />
       </label>
       <label className="field-label">Pairing code<input type="password" value={code} onChange={event => setCode(event.target.value)} autoComplete="off" placeholder="Included in your private link" /></label>
       {error && <p className="error-box" role="alert">{error}</p>}

@@ -75,6 +75,8 @@ test('pair once stores only laptop origin and token and directs APIs and photos 
     globalThis.fetch=async(input,options)=>{ requests.push({url:String(input),options}); return Response.json({access_token:'device-session',connected:true}); };
     await connectLaptop('https://laptop.test/#pair=private-pairing-code','');
     assert.deepEqual(readConnection(),{origin:'https://laptop.test',token:'device-session'});
+    await connectLaptop('https://naturedex.onrender.com/#computer=https%3A%2F%2Flaptop.test&pair=private-pairing-code','');
+    assert.equal(requests.pop()!.url,'https://laptop.test/api/mobile/pair');
     assert.ok(!JSON.stringify([...values]).includes('private-pairing-code'));
     await backendFetch('/api/dashboard'); await backendFetch('/photos/image.jpg');
     assert.equal(requests[1].url,'https://laptop.test/api/dashboard');

@@ -44,7 +44,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     from PIL import Image, ImageOps
-    from backend.app.recognition import recognizer
+    # Benchmark the engine directly so process peak memory includes the model.
+    # The app itself uses a disposable worker instead.
+    from backend.app.recognition import ModelEngine
+    recognizer = ModelEngine()
     with Image.open(args.photo) as original:
         photo = ImageOps.exif_transpose(original).convert("RGB")
         photo.thumbnail((2048, 2048))

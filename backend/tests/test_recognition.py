@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from backend.app.recognition import Recognizer, ModelUnavailable
+from backend.app.recognition import ModelEngine as Recognizer, ModelUnavailable
 
 def test_adapter_uses_bioclip2_species_rank_and_pil_image_list(monkeypatch):
     observed = {}

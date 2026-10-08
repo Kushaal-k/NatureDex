@@ -28,7 +28,10 @@ Mode = Literal["demo", "field"]
 async def lifespan(app):
     initialize()
     (DATA / "photos").mkdir(parents=True, exist_ok=True)
-    yield
+    try:
+        yield
+    finally:
+        recognizer.shutdown()
 
 app = FastAPI(title="NatureDex", version="0.1.0", lifespan=lifespan)
 

@@ -4,7 +4,7 @@
 
 Create a Static Site with build command `npm ci && npm run build` and publish directory `dist`. No start command or environment variables are required. This hosts the interface; it does not host identification or your saved collection.
 
-The phone app remains at the Render address and stores captures there, even while the laptop is unavailable. **Profile → Connect my laptop** pairs once with a protected laptop gateway. Pending photos are identified automatically while the open app reconnects; Walk matches wait for review. A stable named tunnel and Windows companion avoid changing addresses and manual launches. See [direct-sync setup](docs/direct-sync.md) for one-time pairing, startup, and connection requirements. Existing quick phone links remain available for temporary testing.
+The phone app remains at the Render address and stores captures there, even while the laptop is unavailable. **Profile → Connect my laptop** pairs once with a protected laptop gateway. Pending photos are identified automatically while the open app reconnects; Walk matches wait for review. Tailscale Funnel provides a stable laptop address without a custom domain; a named Cloudflare tunnel is also supported. The Windows companion avoids manual launches. See [direct-sync setup](docs/direct-sync.md) for one-time pairing, startup, and connection requirements. Existing quick phone links remain available for temporary testing.
 
 **Your world, discovered.** A local-first nature field guide and exploration game.
 

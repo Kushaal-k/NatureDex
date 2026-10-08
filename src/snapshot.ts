@@ -15,6 +15,8 @@ export interface QueuedObservation {
   mode: Mode;
   note: string;
   area: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   createdAt: string;
   scan?: Scan;
   reviewRequired?: boolean;
@@ -236,6 +238,8 @@ async function runOfflineSync(): Promise<SyncResult> {
           captured_at: item.createdAt,
           note: item.note,
           area: item.area,
+          latitude: item.latitude ?? null,
+          longitude: item.longitude ?? null,
         }),
       });
       await removeQueuedObservation(item.id);

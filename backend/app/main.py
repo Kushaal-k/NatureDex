@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .catalog import BY_ID, EXPEDITIONS, ROOT
 from .quests import enrich
 from .recognition import ModelUnavailable, recognizer
+from .photo_quality import photo_quality
 from .storage import DATA, dashboard, db, expedition_state, get_species, initialize
 
 os.environ.setdefault("HF_HOME", str(ROOT / ".model-cache"))
@@ -92,6 +93,10 @@ def scan(file: UploadFile = File(...)):
     except ModelUnavailable as exc:
         logging.getLogger("naturedex").warning("Recognition unavailable: %s", recognizer.error or exc)
         raise HTTPException(503, str(exc))
+    result["photo_quality"] = photo_quality(image)
+    if result["photo_quality"]["needs_review"]:
+        result["uncertain"] = True
+        result["message"] = "Photo quality may hide useful details. Compare the suggestions or try a clearer photo before saving."
     # Re-encode so GPS and other EXIF metadata do not leave the upload.
     filename = f"{uuid.uuid4()}.jpg"
     photo_dir = DATA / "photos"
@@ -104,12 +109,16 @@ class SaveRequest(BaseModel):
     candidate: int = Field(default=0, ge=0, le=4)
     note: str = Field(default="", max_length=400)
     area: str | None = Field(default=None, max_length=100)
+    latitude: float | None = Field(default=None, ge=-85, le=85, allow_inf_nan=False)
+    longitude: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
     confirm_uncertain: bool = False
     offline_id: str | None = Field(default=None, min_length=1, max_length=128)
     captured_at: datetime | None = None
 
 @app.post("/api/observations")
 def save_observation(body: SaveRequest):
+    if (body.latitude is None) != (body.longitude is None):
+        raise HTTPException(422, "Provide both location coordinates, or neither.")
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if body.offline_id:
@@ -141,6 +150,8 @@ def save_observation(body: SaveRequest):
         xp = (30 + {"Common": 20, "Uncommon": 50, "Rare": 150}.get(species["rarity"], 20) + (100 if category_first else 0)) if first else 5
         observation_id = str(uuid.uuid4())
         c.execute("INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)", (observation_id, species["id"], scan["mode"], found_at.isoformat(), scan["photo"], candidate["score"], xp, body.area, body.note))
+        if body.latitude is not None:
+            c.execute("INSERT INTO observation_places VALUES (?,?,?)", (observation_id, body.latitude, body.longitude))
         c.execute("UPDATE scans SET saved=1 WHERE id=?", (body.scan_id,))
         result = {"id": observation_id, "xp": xp, "new_species": first, "species": species}
         if body.offline_id:
